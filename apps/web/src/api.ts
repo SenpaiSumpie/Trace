@@ -1,0 +1,117 @@
+// Types mirror src/Trace.Contracts/V1/Contracts.cs.
+
+export interface Snapshot {
+  id: string
+  commitSha: string
+  branch: string
+  completedAt: string
+}
+
+export interface Repository {
+  id: string
+  owner: string
+  name: string
+  defaultBranch: string
+  latestSnapshot: Snapshot | null
+}
+
+export interface Evidence {
+  source: string
+  path: string
+  startLine: number
+  endLine: number
+  commitSha: string
+  supports: string
+  excerpt: string
+}
+
+export interface InvestigationResult {
+  outcome: 'answered' | 'insufficient_evidence'
+  answer: string
+  evidence: Evidence[]
+  unknowns: string[]
+  limitations: string[]
+}
+
+export interface Investigation {
+  investigationId: string
+  repositoryId: string
+  snapshotId: string
+  commitSha: string
+  type: string
+  question: string
+  state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  modelId: string | null
+  promptVersion: string | null
+  createdAt: string
+  updatedAt: string
+  result: InvestigationResult | null
+  errorCode: string | null
+}
+
+export interface InvestigationEvent {
+  seq: number
+  eventType: string
+  toolName: string | null
+  summary: string
+  occurredAt: string
+}
+
+/** An error response from the API, with a message that is safe to show. */
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+interface ProblemDetails {
+  title?: string
+  detail?: string
+  errors?: Record<string, string[]>
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init)
+  if (!response.ok) {
+    throw new ApiError(response.status, await describeProblem(response))
+  }
+  return (await response.json()) as T
+}
+
+async function describeProblem(response: Response): Promise<string> {
+  try {
+    const problem = (await response.json()) as ProblemDetails
+    const fieldErrors = Object.values(problem.errors ?? {}).flat()
+    if (fieldErrors.length > 0) {
+      return fieldErrors.join(' ')
+    }
+    return problem.detail ?? problem.title ?? `The API returned ${response.status}.`
+  } catch {
+    return `The API returned ${response.status}.`
+  }
+}
+
+export function listRepositories(): Promise<Repository[]> {
+  return request<Repository[]>('/api/v1/repositories')
+}
+
+export function askQuestion(input: {
+  repositoryId: string
+  snapshotId: string
+  question: string
+  idempotencyKey: string
+}): Promise<Investigation> {
+  return request<Investigation>('/api/v1/investigations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, type: 'question' }),
+  })
+}
+
+export function listEvents(investigationId: string): Promise<InvestigationEvent[]> {
+  return request<InvestigationEvent[]>(`/api/v1/investigations/${investigationId}/events`)
+}

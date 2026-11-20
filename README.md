@@ -9,7 +9,7 @@ line range. The full specification is in
 
 ## Status
 
-**A grounded question API over a fixture repository, driven by a fake model; no UI for it yet.** What exists today:
+**The first vertical slice works end to end in a browser, on a fixture repository, driven by fake models.** What exists today:
 
 - .NET solution with the modular-monolith project layout ([ADR-001](docs/adr/ADR-001-modular-monolith-and-worker.md)).
 - Domain model and PostgreSQL schema for repositories, index snapshots, source chunks,
@@ -37,15 +37,17 @@ line range. The full specification is in
 - HTTP API: `GET /api/v1/repositories`, `POST /api/v1/investigations`,
   `GET /api/v1/investigations/{id}` and `.../events`, plus `GET /health` and `GET /health/ready`.
   **Unauthenticated**; it only exposes repositories marked public (the demo fixture).
+- Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
+  listings with real line numbers, what was not settled, and every step the investigation took.
 - Worker host (no jobs yet).
-- React + TypeScript web shell that displays API health.
-- Unit, integration and security tests; CI for build, lint, format and tests.
+- Unit, integration and security tests, web component tests, and Playwright browser tests of
+  the whole flow; CI runs all of them.
 
 Not implemented: real embedding or chat providers (so no model-written answers yet),
 authentication, GitHub integration, issue-to-plan, background jobs, secret scanning, rate
 limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-Next task: minimal UI and browser tests (handoff Section 15, Task 6).
+The six tasks of the first sprint (handoff Section 15) are done. Next are the P0 follow-ups: GitHub App and authentication, durable jobs, real model providers, deployment.
 
 ## Prerequisites
 
@@ -67,6 +69,8 @@ cd apps/web
 npm ci
 npm run dev                                                  # http://localhost:5173
 ```
+
+Open http://localhost:5173, type a question about the demo repository and press Ask.
 
 In the Development environment the API applies pending migrations, seeds the public demo
 repository (`trace-demo/sample-repo`) and indexes the fixture directory on startup, using the
@@ -112,7 +116,11 @@ dotnet test            # integration tests start a disposable PostgreSQL contain
 cd apps/web
 npm run lint
 npm run build
-npm test
+npm test               # component tests (no servers needed)
+
+# Browser tests. Need the database running; they start the API and the web app themselves.
+npx playwright install chromium   # once
+npm run test:e2e
 ```
 
 ## Layout

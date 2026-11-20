@@ -41,3 +41,38 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      # Same database the API expects in Development (see appsettings.Development.json).
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: local-dev-only-change-me
+          POSTGRES_DB: trace
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd "pg_isready -U trace -d trace"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: dotnet build src/Trace.Api
+      - run: npm ci
+        working-directory: apps/web
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npm run test:e2e
+        working-directory: apps/web

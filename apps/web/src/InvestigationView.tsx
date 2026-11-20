@@ -1,0 +1,149 @@
+import { useQuery } from '@tanstack/react-query'
+import { type Evidence, type Investigation, listEvents } from './api.ts'
+
+const failureReasons: Record<string, string> = {
+  invalid_model_output: 'The model did not return a usable answer, so nothing is shown.',
+  model_error: 'The language model could not be reached.',
+  internal_error: 'Something went wrong inside TRACE.',
+}
+
+export function InvestigationView({ investigation }: { investigation: Investigation }) {
+  const result = investigation.result
+
+  return (
+    <article className="investigation" aria-labelledby="result-heading">
+      <p className="asked">{investigation.question}</p>
+
+      {investigation.state === 'failed' && (
+        <>
+          <h2 id="result-heading">The investigation failed</h2>
+          <p role="alert">
+            {failureReasons[investigation.errorCode ?? ''] ?? 'It stopped before producing a result.'} Ask
+            again to retry.
+          </p>
+        </>
+      )}
+
+      {investigation.state === 'cancelled' && (
+        <>
+          <h2 id="result-heading">The investigation was cancelled</h2>
+          <p>Ask again to retry.</p>
+        </>
+      )}
+
+      {result?.outcome === 'insufficient_evidence' && (
+        <>
+          <h2 id="result-heading">Not enough evidence</h2>
+          <p className="answer">{result.answer}</p>
+        </>
+      )}
+
+      {result?.outcome === 'answered' && (
+        <>
+          <h2 id="result-heading">Answer</h2>
+          <p className="answer">{result.answer}</p>
+
+          <h3>Evidence</h3>
+          <p className="hint">
+            Each passage was read from the indexed snapshot. Check that it supports the answer.
+          </p>
+          <ol className="evidence-list">
+            {result.evidence.map((evidence) => (
+              <li key={`${evidence.path}:${evidence.startLine}-${evidence.endLine}`}>
+                <EvidencePassage evidence={evidence} />
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+
+      {result && result.unknowns.length > 0 && (
+        <>
+          <h3>Not settled by the evidence</h3>
+          <ul>
+            {result.unknowns.map((unknown) => (
+              <li key={unknown}>{unknown}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {result && result.limitations.length > 0 && (
+        <>
+          <h3>Limits of this result</h3>
+          <ul>
+            {result.limitations.map((limitation) => (
+              <li key={limitation}>{limitation}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <Steps investigationId={investigation.investigationId} />
+
+      <p className="provenance">
+        Read at commit <code>{investigation.commitSha.slice(0, 12)}</code>
+        {investigation.modelId && (
+          <>
+            {' '}
+            by model <code>{investigation.modelId}</code>
+          </>
+        )}
+        {investigation.promptVersion && (
+          <>
+            {' '}
+            with prompt <code>{investigation.promptVersion}</code>
+          </>
+        )}
+        .
+      </p>
+    </article>
+  )
+}
+
+function EvidencePassage({ evidence }: { evidence: Evidence }) {
+  const lines = evidence.excerpt.split('\n')
+
+  return (
+    <figure className="passage">
+      <figcaption>
+        <span className="location">
+          {evidence.path}, lines {evidence.startLine}–{evidence.endLine}
+        </span>
+        {evidence.supports && <span className="supports">{evidence.supports}</span>}
+      </figcaption>
+      <pre>
+        {lines.map((line, index) => (
+          <span className="line" key={evidence.startLine + index}>
+            <span className="line-number">{evidence.startLine + index}</span>
+            <code>{line || ' '}</code>
+          </span>
+        ))}
+      </pre>
+    </figure>
+  )
+}
+
+function Steps({ investigationId }: { investigationId: string }) {
+  const events = useQuery({
+    queryKey: ['investigation-events', investigationId],
+    queryFn: () => listEvents(investigationId),
+  })
+
+  return (
+    <section aria-labelledby="steps-heading">
+      <h3 id="steps-heading">What TRACE did</h3>
+      {events.isPending && <p role="status">Loading the steps…</p>}
+      {events.isError && <p role="alert">The steps could not be loaded. Reload the page to try again.</p>}
+      {events.data && (
+        <ol className="steps">
+          {events.data.map((event) => (
+            <li key={event.seq} data-event-type={event.eventType}>
+              {event.summary}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  )
+}
