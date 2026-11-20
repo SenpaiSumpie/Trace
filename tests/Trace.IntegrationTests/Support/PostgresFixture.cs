@@ -15,7 +15,11 @@ namespace Trace.IntegrationTests.Support;
 /// <summary>One disposable PostgreSQL + pgvector container shared by all database tests.</summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer container = new PostgreSqlBuilder("pgvector/pgvector:pg17").Build();
+    // Every test gets its own database, and each database keeps its own idle connection pool,
+    // so the suite as a whole needs far more than PostgreSQL's default of 100 connections.
+    private readonly PostgreSqlContainer container = new PostgreSqlBuilder("pgvector/pgvector:pg17")
+        .WithCommand("-c", "max_connections=1000")
+        .Build();
 
     public Task InitializeAsync() => container.StartAsync();
 

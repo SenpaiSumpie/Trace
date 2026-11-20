@@ -27,6 +27,9 @@ public sealed class Repository : Entity
     /// <summary>Stable GitHub repository ID; null for locally seeded fixture repositories.</summary>
     public long? GitHubRepoId { get; private set; }
 
+    /// <summary>The GitHub App installation this repository is reached through; null for the local demo fixture.</summary>
+    public Guid? InstallationId { get; private set; }
+
     public static Repository Create(
         string owner,
         string name,
@@ -40,4 +43,33 @@ public sealed class Repository : Entity
             Visibility = visibility,
             GitHubRepoId = gitHubRepoId,
         };
+
+    /// <summary>A repository reached through a GitHub App installation, keyed by GitHub's stable repository ID.</summary>
+    public static Repository FromGitHub(
+        Guid installationId,
+        long gitHubRepoId,
+        string owner,
+        string name,
+        string defaultBranch,
+        RepositoryVisibility visibility)
+    {
+        var repository = Create(owner, name, defaultBranch, visibility, gitHubRepoId);
+        repository.InstallationId = installationId;
+        return repository;
+    }
+
+    /// <summary>Applies GitHub's current view: repositories can be renamed, moved or change visibility.</summary>
+    public void UpdateFromGitHub(
+        Guid installationId,
+        string owner,
+        string name,
+        string defaultBranch,
+        RepositoryVisibility visibility)
+    {
+        InstallationId = installationId;
+        Owner = Guard.Required(owner, MaxNameLength, nameof(owner));
+        Name = Guard.Required(name, MaxNameLength, nameof(name));
+        DefaultBranch = Guard.Required(defaultBranch, MaxBranchLength, nameof(defaultBranch));
+        Visibility = visibility;
+    }
 }

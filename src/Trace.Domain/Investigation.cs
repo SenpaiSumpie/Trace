@@ -37,6 +37,9 @@ public sealed class Investigation : Entity
 
     public InvestigationState State { get; private set; }
 
+    /// <summary>Who asked; null for anonymous use of the public demo repository.</summary>
+    public Guid? UserId { get; private set; }
+
     /// <summary>Client-supplied key; a repeated request with the same key returns this investigation.</summary>
     public string? IdempotencyKey { get; private set; }
 
@@ -61,7 +64,8 @@ public sealed class Investigation : Entity
         IndexSnapshot snapshot,
         InvestigationType type,
         string question,
-        string? idempotencyKey = null)
+        string? idempotencyKey = null,
+        Guid? userId = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.Status != SnapshotStatus.Completed)
@@ -76,6 +80,7 @@ public sealed class Investigation : Entity
             Type = type,
             Question = Guard.Required(question, MaxQuestionLength, nameof(question)),
             State = InvestigationState.Queued,
+            UserId = userId,
             IdempotencyKey = idempotencyKey is null
                 ? null
                 : Guard.Required(idempotencyKey, MaxIdempotencyKeyLength, nameof(idempotencyKey)),

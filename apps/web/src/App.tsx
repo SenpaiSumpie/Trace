@@ -4,8 +4,10 @@ import {
   askQuestion,
   cancelJob,
   getInvestigation,
+  getMe,
   isFinished,
   listRepositories,
+  signOut,
   type Repository,
 } from './api.ts'
 import { ApiStatus } from './ApiStatus.tsx'
@@ -15,6 +17,11 @@ const MAX_QUESTION_LENGTH = 4000
 
 export default function App() {
   const repositories = useQuery({ queryKey: ['repositories'], queryFn: listRepositories })
+
+  // If this cannot be loaded the form stays usable; the server decides what is allowed anyway.
+  const me = useQuery({ queryKey: ['me'], queryFn: getMe })
+  const mayAsk = me.data?.canStartWork ?? true
+  const leave = useMutation({ mutationFn: signOut, onSuccess: () => window.location.reload() })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
 
@@ -37,7 +44,7 @@ export default function App() {
 
   const indexed = (repositories.data ?? []).filter((repository) => repository.latestSnapshot !== null)
   const selected = indexed.find((repository) => repository.id === selectedId) ?? indexed[0]
-  const canAsk = selected !== undefined && question.trim().length > 0 && !working
+  const canAsk = selected !== undefined && question.trim().length > 0 && !working && mayAsk
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -59,6 +66,20 @@ export default function App() {
       <header>
         <h1>TRACE</h1>
         <p className="tagline">Ask about a codebase. Check the evidence.</p>
+        {me.data?.user && (
+          <p className="account">
+            Signed in as {me.data.user.login}.{' '}
+            <button type="button" className="link" onClick={() => leave.mutate()} disabled={leave.isPending}>
+              Sign out
+            </button>
+          </p>
+        )}
+        {me.data && !me.data.user && me.data.signInAvailable && (
+          <p className="account">
+            <a href="/api/v1/auth/login">Sign in with GitHub</a> to use your own repositories
+            {mayAsk ? '.' : ' and to ask questions.'}
+          </p>
+        )}
       </header>
 
       {repositories.isPending && <p role="status">Loading repositories…</p>}

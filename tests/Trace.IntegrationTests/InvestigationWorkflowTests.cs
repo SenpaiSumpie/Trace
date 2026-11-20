@@ -447,6 +447,7 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
             services.GetRequiredService<CitationValidator>(),
             model,
             limits ?? services.GetRequiredService<ChatLimits>(),
+            new Trace.Application.Access.AnonymousUser(),
             TimeProvider.System,
             services.GetRequiredService<IJobSignal>());
 

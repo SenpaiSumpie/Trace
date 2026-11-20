@@ -3,12 +3,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Trace.Application.Access;
 using Trace.Application.Indexing;
 using Trace.Application.Investigations;
 using Trace.Application.Jobs;
 using Trace.Application.Retrieval;
 using Trace.Infrastructure.Chat;
 using Trace.Infrastructure.Embeddings;
+using Trace.Infrastructure.GitHub;
 using Trace.Infrastructure.Jobs;
 using Trace.Infrastructure.Persistence;
 
@@ -52,6 +54,15 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IRepositoryCatalog, EfRepositoryCatalog>();
         services.AddScoped<IInvestigationStore, EfInvestigationStore>();
         services.AddScoped<QuestionInvestigator>();
+
+        services.TryAddScoped<ICurrentUser, AnonymousUser>();
+        services.AddSingleton(CreateGitHubOptions);
+        services.AddScoped(provider => new GitHubClient(
+            provider.GetRequiredService<IHttpClientFactory>().CreateClient(GitHubClient.HttpClientName),
+            provider.GetRequiredService<GitHubOptions>(),
+            provider.GetRequiredService<TimeProvider>()));
+        services.AddScoped<GitHubSignIn>();
+        services.AddScoped<GitHubWebhooks>();
 
         services.TryAddSingleton(new JobOptions());
         services.AddSingleton<IJobSignal, JobSignal>();
@@ -118,6 +129,31 @@ public static class InfrastructureServiceCollectionExtensions
             await DemoData.SeedAsync(
                 db, scope.ServiceProvider.GetRequiredService<SnapshotIndexer>(), fixtureDirectory, cancellationToken);
         }
+    }
+
+    /// <summary>GitHub App settings: GitHub:ClientId, ClientSecret, PrivateKey (PEM) and WebhookSecret.</summary>
+    private static GitHubOptions CreateGitHubOptions(IServiceProvider services)
+    {
+        var configuration = services.GetRequiredService<IConfiguration>();
+        var options = new GitHubOptions
+        {
+            ClientId = configuration["GitHub:ClientId"],
+            ClientSecret = configuration["GitHub:ClientSecret"],
+            // Allow the PEM to be supplied on one line with literal \n, as most secret stores require.
+            PrivateKey = configuration["GitHub:PrivateKey"]?.Replace("\\n", "\n", StringComparison.Ordinal),
+            WebhookSecret = configuration["GitHub:WebhookSecret"],
+        };
+        if (configuration["GitHub:ApiBaseUrl"] is { Length: > 0 } api)
+        {
+            options.ApiBaseUrl = new Uri(api);
+        }
+
+        if (configuration["GitHub:WebBaseUrl"] is { Length: > 0 } web)
+        {
+            options.WebBaseUrl = new Uri(web);
+        }
+
+        return options;
     }
 
     private static IEmbeddingProvider CreateEmbeddingProvider(IServiceProvider services)

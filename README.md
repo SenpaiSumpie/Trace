@@ -33,12 +33,17 @@ line range. The full specification is in
   embeddings, plus deterministic fakes for tests and local use (refused in Production). The fakes
   are what runs by default locally: the chat fake only points at passages matching the question's
   words. **The real adapters have not yet been run against the live APIs.**
+- Sign in with GitHub and private repositories through a read-only GitHub App: access is taken
+  from GitHub at sign-in, every endpoint applies one visibility rule, webhooks revoke access and
+  delete data, and files that look like they contain credentials are never indexed
+  ([ADR-002](docs/adr/ADR-002-github-app-auth-and-authorization.md)). **Not yet tried against the
+  real GitHub: the app has to be registered first** ([setup](docs/github-app-setup.md)).
 - Spending guards: a per-client rate limit on requests that start work, a token limit per
   investigation and a shared daily token budget, all failing closed.
 - HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
   investigation and its events, queue a re-index, read and cancel jobs; plus `GET /health` and
   `GET /health/ready`.
-  **Unauthenticated**; it only exposes repositories marked public (the demo fixture).
+  Anonymous callers see only the public demo repository; in production, asking questions needs sign-in.
 - Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
   listings with real line numbers, what was not settled, and every step the investigation took.
 - Durable background jobs in PostgreSQL: investigations and indexing are queued and run by the
@@ -47,9 +52,9 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: authentication, GitHub integration, issue-to-plan, secret scanning, rate limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+Not implemented: issue-to-plan, deployment, a UI for indexing your own repositories. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-The six tasks of the first sprint (handoff Section 15) are done. Durable jobs and model providers are done too. Remaining P0 follow-ups: GitHub App and authentication, deployment.
+The six tasks of the first sprint (handoff Section 15) are done. Durable jobs, model providers and GitHub sign-in are done too. Remaining P0 follow-up: deployment.
 
 ## Prerequisites
 

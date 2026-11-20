@@ -80,3 +80,10 @@ public sealed record JobResponse(
     string? ErrorCode,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
+
+public sealed record UserResponse(string Login);
+
+/// <param name="User">The signed-in user, or null when anonymous.</param>
+/// <param name="SignInAvailable">False when no GitHub App is configured.</param>
+/// <param name="CanStartWork">Whether this caller may ask questions and queue jobs.</param>
+public sealed record MeResponse(UserResponse? User, bool SignInAvailable, bool CanStartWork);

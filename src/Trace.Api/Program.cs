@@ -16,6 +16,7 @@ builder.Services.AddProblemDetails();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 
 builder.Services.AddTraceInfrastructure();
+builder.AddTraceAuthentication();
 
 // Starting investigations and index jobs costs model calls and worker time, so those requests
 // are limited per client address. There are no users yet to limit by.
@@ -43,6 +44,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseAuthentication();
 app.UseRateLimiter();
 
 // Liveness: the process is up. Readiness: its dependencies are reachable.
@@ -50,6 +52,7 @@ app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false }
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains(ReadyTag) });
 
 app.MapV1Endpoints();
+app.MapAuthEndpoints();
 
 await app.Services.InitializeTraceDatabaseAsync();
 

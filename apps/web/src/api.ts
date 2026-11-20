@@ -130,3 +130,20 @@ export function cancelJob(jobId: string): Promise<unknown> {
 export function isFinished(investigation: Investigation): boolean {
   return investigation.state === 'completed' || investigation.state === 'failed' || investigation.state === 'cancelled'
 }
+
+export interface Me {
+  user: { login: string } | null
+  signInAvailable: boolean
+  canStartWork: boolean
+}
+
+export function getMe(): Promise<Me> {
+  return request<Me>('/api/v1/me')
+}
+
+export async function signOut(): Promise<void> {
+  const response = await fetch('/api/v1/auth/logout', { method: 'POST' })
+  if (!response.ok) {
+    throw new ApiError(response.status, 'Signing out failed.')
+  }
+}

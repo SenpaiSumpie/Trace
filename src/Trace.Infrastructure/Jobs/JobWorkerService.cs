@@ -5,6 +5,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Trace.Application.Indexing;
 using Trace.Application.Jobs;
+using Trace.Domain;
+using Trace.Infrastructure.GitHub;
 using Trace.Infrastructure.Indexing;
 using Trace.Infrastructure.Persistence;
 
@@ -80,16 +82,35 @@ internal sealed partial class JobWorkerService(
 }
 
 /// <summary>
-/// The only repository source so far: the demo repository's fixture directory, when configured.
-/// GitHub-backed repositories get their own source with the GitHub integration.
+/// Where a repository is read from: GitHub (through its active app installation) or, for the
+/// demo repository, the configured fixture directory. Anything else has no source.
 /// </summary>
 internal sealed class ConfiguredRepositorySourceResolver(
     TraceDbContext db,
+    GitHubClient gitHub,
     IConfiguration configuration,
     IHostEnvironment environment) : IRepositorySourceResolver
 {
     public async Task<IRepositorySource?> ResolveAsync(Guid repositoryId, CancellationToken cancellationToken = default)
     {
+        var linked = await (
+            from repository in db.Repositories.AsNoTracking()
+            join installation in db.GitHubInstallations.AsNoTracking() on repository.InstallationId equals installation.Id
+            where repository.Id == repositoryId
+            select new { repository, installation }).SingleOrDefaultAsync(cancellationToken);
+        if (linked is not null)
+        {
+            return linked.installation.Status == InstallationStatus.Active && linked.repository.GitHubRepoId is { } gitHubRepoId
+                ? new GitHubRepositorySource(
+                    gitHub,
+                    linked.installation.InstallationId,
+                    gitHubRepoId,
+                    linked.repository.Owner,
+                    linked.repository.Name,
+                    linked.repository.DefaultBranch)
+                : null;
+        }
+
         if (configuration[InfrastructureServiceCollectionExtensions.DemoFixturePathKey] is not { Length: > 0 } path)
         {
             return null;

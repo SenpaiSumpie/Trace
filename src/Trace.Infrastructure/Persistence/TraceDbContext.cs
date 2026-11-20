@@ -17,6 +17,12 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 
     private const string Sha256Hex = "'^[0-9a-f]{64}$'";
 
+    public DbSet<User> Users => Set<User>();
+
+    public DbSet<GitHubInstallation> GitHubInstallations => Set<GitHubInstallation>();
+
+    public DbSet<RepositoryAccess> RepositoryAccess => Set<RepositoryAccess>();
+
     public DbSet<Repository> Repositories => Set<Repository>();
 
     public DbSet<IndexSnapshot> IndexSnapshots => Set<IndexSnapshot>();
@@ -52,6 +58,33 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
     {
         modelBuilder.HasPostgresExtension("vector");
 
+        modelBuilder.Entity<User>(user =>
+        {
+            user.ToTable("users");
+            user.Property(u => u.GitHubUserId).HasColumnName("github_user_id");
+            user.Property(u => u.Login).HasMaxLength(User.MaxLoginLength);
+            user.HasIndex(u => u.GitHubUserId).IsUnique();
+        });
+
+        modelBuilder.Entity<GitHubInstallation>(installation =>
+        {
+            installation.ToTable("github_installations", table => table.HasCheckConstraint(
+                "ck_github_installations_status", EnumStorage.CheckSql<InstallationStatus>("status")));
+            installation.Property(i => i.AccountLogin).HasMaxLength(User.MaxLoginLength);
+            installation.Property(i => i.Status).HasMaxLength(20).HasConversion(
+                value => EnumStorage.ToStorage(value),
+                stored => EnumStorage.FromStorage<InstallationStatus>(stored));
+            installation.HasIndex(i => i.InstallationId).IsUnique();
+        });
+
+        modelBuilder.Entity<RepositoryAccess>(access =>
+        {
+            access.ToTable("repository_access");
+            access.HasOne<User>().WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Cascade);
+            access.HasOne<Repository>().WithMany().HasForeignKey(a => a.RepositoryId).OnDelete(DeleteBehavior.Cascade);
+            access.HasIndex(a => new { a.UserId, a.RepositoryId }).IsUnique();
+        });
+
         modelBuilder.Entity<Repository>(ConfigureRepository);
         modelBuilder.Entity<IndexSnapshot>(ConfigureIndexSnapshot);
         modelBuilder.Entity<SourceChunk>(ConfigureSourceChunk);
@@ -82,6 +115,11 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
         repository.Property(r => r.GitHubRepoId).HasColumnName("github_repo_id");
 
         repository.HasIndex(r => r.GitHubRepoId).IsUnique();
+
+        // Removing an installation removes its repositories and, by cascade, everything indexed from them.
+        repository.HasOne<GitHubInstallation>().WithMany()
+            .HasForeignKey(r => r.InstallationId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 
     private static void ConfigureIndexSnapshot(EntityTypeBuilder<IndexSnapshot> snapshot)
@@ -167,6 +205,7 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 
         investigation.Property(i => i.Question).HasMaxLength(Investigation.MaxQuestionLength);
         investigation.Property(i => i.ResultJson).HasColumnType("jsonb");
+        investigation.HasOne<User>().WithMany().HasForeignKey(i => i.UserId).OnDelete(DeleteBehavior.SetNull);
         investigation.Property(i => i.IdempotencyKey).HasMaxLength(Investigation.MaxIdempotencyKeyLength);
         investigation.Property(i => i.ModelId).HasMaxLength(Investigation.MaxVersionLength);
         investigation.Property(i => i.PromptVersion).HasMaxLength(Investigation.MaxVersionLength);

@@ -87,6 +87,49 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Trace.Domain.GitHubInstallation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountLogin")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("account_login");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("InstallationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("installation_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_github_installations");
+
+                    b.HasIndex("InstallationId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_github_installations_installation_id");
+
+                    b.ToTable("github_installations", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_github_installations_status", "status IN ('active', 'suspended')");
+                        });
+                });
+
             modelBuilder.Entity("Trace.Domain.IndexSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -237,11 +280,18 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
 
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
                     b.HasKey("Id")
                         .HasName("pk_investigations");
 
                     b.HasAlternateKey("Id", "SnapshotId")
                         .HasName("ak_investigations_id_snapshot_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_investigations_user_id");
 
                     b.HasIndex("RepositoryId", "IdempotencyKey")
                         .IsUnique()
@@ -429,6 +479,10 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("github_repo_id");
 
+                    b.Property<Guid?>("InstallationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("installation_id");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -458,10 +512,48 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_repositories_github_repo_id");
 
+                    b.HasIndex("InstallationId")
+                        .HasDatabaseName("ix_repositories_installation_id");
+
                     b.ToTable("repositories", null, t =>
                         {
                             t.HasCheckConstraint("ck_repositories_visibility", "visibility IN ('public', 'private')");
                         });
+                });
+
+            modelBuilder.Entity("Trace.Domain.RepositoryAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("RepositoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("repository_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_repository_access");
+
+                    b.HasIndex("RepositoryId")
+                        .HasDatabaseName("ix_repository_access_repository_id");
+
+                    b.HasIndex("UserId", "RepositoryId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_repository_access_user_id_repository_id");
+
+                    b.ToTable("repository_access", (string)null);
                 });
 
             modelBuilder.Entity("Trace.Domain.SourceChunk", b =>
@@ -539,6 +631,40 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Trace.Domain.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("GitHubUserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("github_user_id");
+
+                    b.Property<string>("Login")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("login");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasIndex("GitHubUserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_users_github_user_id");
+
+                    b.ToTable("users", (string)null);
+                });
+
             modelBuilder.Entity("Trace.Domain.EvidenceRef", b =>
                 {
                     b.HasOne("Trace.Domain.SourceChunk", null)
@@ -576,6 +702,12 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_investigations_repositories_repository_id");
 
+                    b.HasOne("Trace.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_investigations_users_user_id");
+
                     b.HasOne("Trace.Domain.IndexSnapshot", null)
                         .WithMany()
                         .HasForeignKey("SnapshotId", "RepositoryId")
@@ -593,6 +725,32 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_investigation_events_investigations_investigation_id");
+                });
+
+            modelBuilder.Entity("Trace.Domain.Repository", b =>
+                {
+                    b.HasOne("Trace.Domain.GitHubInstallation", null)
+                        .WithMany()
+                        .HasForeignKey("InstallationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_repositories_github_installations_installation_id");
+                });
+
+            modelBuilder.Entity("Trace.Domain.RepositoryAccess", b =>
+                {
+                    b.HasOne("Trace.Domain.Repository", null)
+                        .WithMany()
+                        .HasForeignKey("RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_repository_access_repositories_repository_id");
+
+                    b.HasOne("Trace.Domain.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_repository_access_users_user_id");
                 });
 
             modelBuilder.Entity("Trace.Domain.SourceChunk", b =>

@@ -269,3 +269,27 @@ test('says so when no repository has been indexed', async () => {
   expect(await screen.findByText(/No repository has been indexed yet/)).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'Ask' })).toBeNull()
 })
+
+test('offers sign-in and blocks asking when the caller may not start work', async () => {
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'GET /api/v1/me': () => json({ user: null, signInAvailable: true, canStartWork: false }),
+  })
+
+  const link = (await screen.findByRole('link', { name: 'Sign in with GitHub' })) as HTMLAnchorElement
+  expect(link.getAttribute('href')).toBe('/api/v1/auth/login')
+
+  fireEvent.change(await screen.findByLabelText('Question'), { target: { value: 'Anything?' } })
+  expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('shows who is signed in', async () => {
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'GET /api/v1/me': () => json({ user: { login: 'alice' }, signInAvailable: true, canStartWork: true }),
+  })
+
+  expect(await screen.findByText(/Signed in as alice\./)).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Sign out' })).toBeTruthy()
+  expect(screen.queryByRole('link', { name: 'Sign in with GitHub' })).toBeNull()
+})

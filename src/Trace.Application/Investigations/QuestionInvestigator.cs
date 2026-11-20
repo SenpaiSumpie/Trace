@@ -39,6 +39,7 @@ public sealed class QuestionInvestigator(
     CitationValidator citationValidator,
     IChatModel model,
     ChatLimits limits,
+    Access.ICurrentUser currentUser,
     TimeProvider timeProvider,
     Jobs.IJobSignal jobSignal)
 {
@@ -86,7 +87,7 @@ public sealed class QuestionInvestigator(
         }
 
         var investigation = Investigation.Create(
-            snapshot, InvestigationType.Question, command.Question, command.IdempotencyKey);
+            snapshot, InvestigationType.Question, command.Question, command.IdempotencyKey, currentUser.UserId);
         var job = Job.Enqueue(
             InvestigationJobHandler.JobKind,
             Job.RepositoryScope(investigation.RepositoryId),

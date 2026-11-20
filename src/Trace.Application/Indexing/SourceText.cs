@@ -9,6 +9,9 @@ public enum SkipReason
     InvalidEncoding,
     LineTooLong,
     Empty,
+
+    /// <summary>The file looks like it contains a credential and was not indexed at all.</summary>
+    PossibleSecret,
 }
 
 public static class SourceText
@@ -67,6 +70,12 @@ public static class SourceText
                 skipReason = SkipReason.LineTooLong;
                 return false;
             }
+        }
+
+        if (Access.SecretScanner.ContainsLikelySecret(decoded))
+        {
+            skipReason = SkipReason.PossibleSecret;
+            return false;
         }
 
         text = decoded;

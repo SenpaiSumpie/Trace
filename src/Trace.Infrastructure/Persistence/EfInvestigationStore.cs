@@ -1,11 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Trace.Application.Access;
 using Trace.Application.Investigations;
 using Trace.Domain;
 
 namespace Trace.Infrastructure.Persistence;
 
-internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationStore
+internal sealed class EfInvestigationStore(TraceDbContext db, ICurrentUser currentUser) : IInvestigationStore
 {
     public Task<Investigation?> FindByIdempotencyKeyAsync(
         Guid repositoryId,
@@ -72,8 +73,8 @@ internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationSt
         var found = await (
             from investigation in db.Investigations.AsNoTracking()
             join snapshot in db.IndexSnapshots on investigation.SnapshotId equals snapshot.Id
-            join repository in db.Repositories on investigation.RepositoryId equals repository.Id
-            where investigation.Id == investigationId && repository.Visibility == RepositoryVisibility.Public
+            join repository in db.VisibleRepositories(currentUser.UserId) on investigation.RepositoryId equals repository.Id
+            where investigation.Id == investigationId
             select new { investigation, snapshot.CommitSha }).SingleOrDefaultAsync(cancellationToken);
         if (found is null)
         {
@@ -95,14 +96,13 @@ internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationSt
     }
 }
 
-internal sealed class EfRepositoryCatalog(TraceDbContext db) : IRepositoryCatalog
+internal sealed class EfRepositoryCatalog(TraceDbContext db, ICurrentUser currentUser) : IRepositoryCatalog
 {
     public const int MaxListed = 100;
 
     public async Task<IReadOnlyList<RepositorySummary>> ListVisibleAsync(CancellationToken cancellationToken = default)
     {
-        var repositories = await db.Repositories.AsNoTracking()
-            .Where(r => r.Visibility == RepositoryVisibility.Public)
+        var repositories = await db.VisibleRepositories(currentUser.UserId).AsNoTracking()
             .OrderBy(r => r.Owner).ThenBy(r => r.Name).ThenBy(r => r.Id)
             .Take(MaxListed)
             .ToListAsync(cancellationToken);
@@ -126,6 +126,21 @@ internal sealed class EfRepositoryCatalog(TraceDbContext db) : IRepositoryCatalo
     }
 
     public Task<bool> IsVisibleAsync(Guid repositoryId, CancellationToken cancellationToken = default) =>
-        db.Repositories.AnyAsync(
-            r => r.Id == repositoryId && r.Visibility == RepositoryVisibility.Public, cancellationToken);
+        db.VisibleRepositories(currentUser.UserId).AnyAsync(r => r.Id == repositoryId, cancellationToken);
+}
+
+internal static class RepositoryVisibilityQueries
+{
+    /// <summary>
+    /// The one definition of what a caller may see. Everyone sees the public demo fixture (public,
+    /// not from GitHub). A GitHub repository, public or private, is visible only to a signed-in
+    /// user holding an access row for it, and only while its installation is active.
+    /// </summary>
+    public static IQueryable<Repository> VisibleRepositories(this TraceDbContext db, Guid? userId) =>
+        db.Repositories.Where(repository =>
+            (repository.InstallationId == null && repository.Visibility == RepositoryVisibility.Public)
+            || (userId != null
+                && db.RepositoryAccess.Any(access => access.UserId == userId && access.RepositoryId == repository.Id)
+                && db.GitHubInstallations.Any(installation =>
+                    installation.Id == repository.InstallationId && installation.Status == InstallationStatus.Active)));
 }
