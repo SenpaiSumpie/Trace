@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Trace.Application.Jobs;
 using Trace.Domain;
+using Trace.Infrastructure.Persistence;
 using Trace.IntegrationTests.Support;
 
 namespace Trace.IntegrationTests;
@@ -327,6 +328,24 @@ public class JobProcessingTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task Lease_is_renewed_while_the_handler_is_busy_with_the_database()
+    {
+        // Heartbeats far more frequent than the handler's own queries, so they are certain to overlap.
+        var options = JobTestExtensions.FastOptions();
+        options.HeartbeatInterval = TimeSpan.FromMilliseconds(2);
+        await using var database = await postgres.CreateDatabaseAsync(configureServices: services => services
+            .AddSingleton<TimeProvider>(clock)
+            .AddSingleton(options)
+            .AddScoped<IJobHandler, DatabaseBusyHandler>());
+        var job = await database.EnqueueTestJobAsync(clock, kind: DatabaseBusyHandler.JobKind);
+
+        Assert.True(await database.ProcessNextJobAsync());
+
+        var finished = await database.GetJobAsync(job.Id);
+        Assert.Equal((JobStatus.Succeeded, 1, null), (finished.Status, finished.Attempts, finished.ErrorCode));
+    }
+
+    [Fact]
     public async Task Jobs_are_claimed_in_the_order_they_become_due()
     {
         await using var database = await CreateAsync();
@@ -345,4 +364,24 @@ public class JobProcessingTests(PostgresFixture postgres)
             .AddSingleton<TimeProvider>(clock)
             .AddSingleton(options ?? JobTestExtensions.FastOptions())
             .AddSingleton<IJobHandler>(handler));
+
+    /// <summary>A handler that, like the real ones, keeps using the scope's database context.</summary>
+    private sealed class DatabaseBusyHandler(TraceDbContext db) : IJobHandler
+    {
+        public const string JobKind = "test.database-busy";
+
+        public string Kind => JobKind;
+
+        public async Task HandleAsync(JobContext context)
+        {
+            for (var i = 0; i < 150; i++)
+            {
+                await db.Jobs.CountAsync(context.CancellationToken);
+                await db.Database.ExecuteSqlAsync($"SELECT pg_sleep(0.002)", context.CancellationToken);
+            }
+        }
+
+        public Task OnAbandonedAsync(Guid jobId, string payloadJson, JobStatus finalStatus, string? errorCode, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
 }

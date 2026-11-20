@@ -9,6 +9,7 @@ namespace Trace.Application.Jobs;
 /// </summary>
 public sealed partial class JobProcessor(
     IJobQueue queue,
+    IJobLeaseKeeper leaseKeeper,
     IEnumerable<IJobHandler> handlers,
     JobOptions options,
     TimeProvider timeProvider,
@@ -124,7 +125,8 @@ public sealed partial class JobProcessor(
             {
                 await Task.Delay(options.HeartbeatInterval, timeProvider, attempt.Token);
 
-                var result = await queue.HeartbeatAsync(jobId, leaseToken, options.LeaseDuration, CancellationToken.None);
+                // Not through queue: that shares the handler's database context, which is busy right now.
+                var result = await leaseKeeper.RenewAsync(jobId, leaseToken, options.LeaseDuration, CancellationToken.None);
                 if (result == HeartbeatResult.Alive)
                 {
                     continue;

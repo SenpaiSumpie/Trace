@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Trace.Application.Jobs;
 using Trace.Domain;
@@ -176,6 +177,21 @@ internal sealed class EfJobQueue(TraceDbContext db, TimeProvider timeProvider) :
             WHERE id = {jobId} AND lease_token = {leaseToken} AND status = 'running'
             """,
             cancellationToken) == 1;
+    }
+}
+
+/// <summary>Renews leases through a database context of its own, created per call.</summary>
+internal sealed class ScopedJobLeaseKeeper(IServiceScopeFactory scopes) : IJobLeaseKeeper
+{
+    public async Task<HeartbeatResult> RenewAsync(
+        Guid jobId,
+        Guid leaseToken,
+        TimeSpan leaseDuration,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<IJobQueue>()
+            .HeartbeatAsync(jobId, leaseToken, leaseDuration, cancellationToken);
     }
 }
 

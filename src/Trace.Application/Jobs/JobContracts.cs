@@ -86,6 +86,16 @@ public interface IJobQueue
     Task<Job?> RequestCancelAsync(Guid jobId, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Renews a running job's lease. It runs concurrently with the job's handler, so an
+/// implementation must not share a database connection or context with it.
+/// </summary>
+public interface IJobLeaseKeeper
+{
+    Task<HeartbeatResult> RenewAsync(
+        Guid jobId, Guid leaseToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default);
+}
+
 /// <summary>Wakes idle workers in this process when a job is enqueued, instead of waiting for the next poll.</summary>
 public interface IJobSignal
 {

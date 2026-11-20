@@ -67,6 +67,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton(new JobOptions());
         services.AddSingleton<IJobSignal, JobSignal>();
         services.AddScoped<IJobQueue, EfJobQueue>();
+        services.AddSingleton<IJobLeaseKeeper, ScopedJobLeaseKeeper>();
         services.AddScoped<IRepositorySourceResolver, ConfiguredRepositorySourceResolver>();
         services.AddScoped<IJobHandler, InvestigationJobHandler>();
         services.AddScoped<IJobHandler, IndexJobHandler>();
