@@ -171,6 +171,26 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("model_id");
+
+                    b.Property<string>("PromptVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("prompt_version");
+
                     b.Property<string>("Question")
                         .IsRequired()
                         .HasMaxLength(4000)
@@ -211,8 +231,10 @@ namespace Trace.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("Id", "SnapshotId")
                         .HasName("ak_investigations_id_snapshot_id");
 
-                    b.HasIndex("RepositoryId")
-                        .HasDatabaseName("ix_investigations_repository_id");
+                    b.HasIndex("RepositoryId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_investigations_idempotency_key")
+                        .HasFilter("idempotency_key IS NOT NULL");
 
                     b.HasIndex("SnapshotId", "RepositoryId")
                         .HasDatabaseName("ix_investigations_snapshot_id_repository_id");
@@ -222,6 +244,64 @@ namespace Trace.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_investigations_state", "state IN ('queued', 'running', 'completed', 'failed', 'cancelled')");
 
                             t.HasCheckConstraint("ck_investigations_type", "type IN ('question', 'issue_to_plan')");
+                        });
+                });
+
+            modelBuilder.Entity("Trace.Domain.InvestigationEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("event_type");
+
+                    b.Property<Guid>("InvestigationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("investigation_id");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata_json");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("integer")
+                        .HasColumnName("seq");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("summary");
+
+                    b.Property<string>("ToolName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tool_name");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_investigation_events");
+
+                    b.HasIndex("InvestigationId", "Seq")
+                        .IsUnique()
+                        .HasDatabaseName("ix_investigation_events_investigation_id_seq");
+
+                    b.ToTable("investigation_events", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_investigation_events_event_type", "event_type IN ('started', 'tool_called', 'tool_failed', 'tool_rejected', 'citation_rejected', 'completed', 'failed')");
+
+                            t.HasCheckConstraint("ck_investigation_events_seq", "seq >= 1");
                         });
                 });
 
@@ -477,6 +557,16 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired()
                         .HasConstraintName("fk_investigations_index_snapshots_snapshot_id_repository_id");
+                });
+
+            modelBuilder.Entity("Trace.Domain.InvestigationEvent", b =>
+                {
+                    b.HasOne("Trace.Domain.Investigation", null)
+                        .WithMany()
+                        .HasForeignKey("InvestigationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_investigation_events_investigations_investigation_id");
                 });
 
             modelBuilder.Entity("Trace.Domain.SourceChunk", b =>

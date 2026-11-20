@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Trace.Application.Indexing;
+using Trace.Application.Investigations;
 using Trace.Application.Retrieval;
+using Trace.Infrastructure.Chat;
 using Trace.Infrastructure.Embeddings;
 using Trace.Infrastructure.Persistence;
 
@@ -20,6 +22,7 @@ public static class InfrastructureServiceCollectionExtensions
     public const string DemoFixturePathKey = "Demo:FixturePath";
 
     public const string EmbeddingProviderKey = "Embeddings:Provider";
+    public const string ChatProviderKey = "Chat:Provider";
 
     public static IServiceCollection AddTraceInfrastructure(this IServiceCollection services)
     {
@@ -39,6 +42,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISnapshotReader, EfSnapshotReader>();
         services.AddScoped<SourceTools>();
         services.AddScoped<CitationValidator>();
+
+        services.AddSingleton(CreateChatModel);
+        services.AddScoped<IRepositoryCatalog, EfRepositoryCatalog>();
+        services.AddScoped<IInvestigationStore, EfInvestigationStore>();
+        services.AddScoped<QuestionInvestigator>();
 
         return services;
     }
@@ -85,26 +93,47 @@ public static class InfrastructureServiceCollectionExtensions
         }
     }
 
-    private static IEmbeddingProvider CreateEmbeddingProvider(IServiceProvider services)
+    private static IEmbeddingProvider CreateEmbeddingProvider(IServiceProvider services) =>
+        CreateProvider<IEmbeddingProvider>(
+            services,
+            EmbeddingProviderKey,
+            DeterministicFakeEmbeddingProvider.ProviderName,
+            () => new DeterministicFakeEmbeddingProvider());
+
+    private static IChatModel CreateChatModel(IServiceProvider services) =>
+        CreateProvider<IChatModel>(
+            services,
+            ChatProviderKey,
+            DeterministicFakeChatModel.ProviderName,
+            () => new DeterministicFakeChatModel());
+
+    /// <summary>
+    /// Resolves an AI provider from configuration. There is no default: a deployment without a
+    /// configured provider fails loudly, and the deterministic fakes are refused in Production.
+    /// </summary>
+    private static TProvider CreateProvider<TProvider>(
+        IServiceProvider services,
+        string key,
+        string fakeName,
+        Func<TProvider> createFake)
     {
-        var provider = services.GetRequiredService<IConfiguration>()[EmbeddingProviderKey];
-        switch (provider)
+        var provider = services.GetRequiredService<IConfiguration>()[key];
+        if (string.IsNullOrEmpty(provider))
         {
-            case DeterministicFakeEmbeddingProvider.ProviderName:
-                if (services.GetRequiredService<IHostEnvironment>().IsProduction())
-                {
-                    throw new InvalidOperationException(
-                        $"'{EmbeddingProviderKey}' must not be '{provider}' in the Production environment.");
-                }
-
-                return new DeterministicFakeEmbeddingProvider();
-
-            case null or "":
-                throw new InvalidOperationException($"'{EmbeddingProviderKey}' is not configured.");
-
-            default:
-                throw new InvalidOperationException($"'{EmbeddingProviderKey}' has unknown value '{provider}'.");
+            throw new InvalidOperationException($"'{key}' is not configured.");
         }
+
+        if (provider != fakeName)
+        {
+            throw new InvalidOperationException($"'{key}' has unknown value '{provider}'.");
+        }
+
+        if (services.GetRequiredService<IHostEnvironment>().IsProduction())
+        {
+            throw new InvalidOperationException($"'{key}' must not be '{provider}' in the Production environment.");
+        }
+
+        return createFake();
     }
 
     private static bool IsEnabled(IConfiguration configuration, string key) =>

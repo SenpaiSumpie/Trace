@@ -19,6 +19,9 @@ public enum InvestigationState
 public sealed class Investigation : Entity
 {
     public const int MaxQuestionLength = 4000;
+    public const int MaxIdempotencyKeyLength = 100;
+    public const int MaxVersionLength = 100;
+    public const int MaxErrorCodeLength = 100;
 
     private Investigation()
     {
@@ -34,10 +37,26 @@ public sealed class Investigation : Entity
 
     public InvestigationState State { get; private set; }
 
+    /// <summary>Client-supplied key; a repeated request with the same key returns this investigation.</summary>
+    public string? IdempotencyKey { get; private set; }
+
+    /// <summary>The chat model that ran the investigation; set when it starts.</summary>
+    public string? ModelId { get; private set; }
+
+    /// <summary>Version of the prompt and tool contract used; set when it starts.</summary>
+    public string? PromptVersion { get; private set; }
+
     /// <summary>Validated structured result (JSON); null until the investigation completes.</summary>
     public string? ResultJson { get; private set; }
 
-    public static Investigation Create(IndexSnapshot snapshot, InvestigationType type, string question)
+    /// <summary>Stable machine-readable reason; set only when the investigation failed.</summary>
+    public string? ErrorCode { get; private set; }
+
+    public static Investigation Create(
+        IndexSnapshot snapshot,
+        InvestigationType type,
+        string question,
+        string? idempotencyKey = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.Status != SnapshotStatus.Completed)
@@ -52,6 +71,46 @@ public sealed class Investigation : Entity
             Type = type,
             Question = Guard.Required(question, MaxQuestionLength, nameof(question)),
             State = InvestigationState.Queued,
+            IdempotencyKey = idempotencyKey is null
+                ? null
+                : Guard.Required(idempotencyKey, MaxIdempotencyKeyLength, nameof(idempotencyKey)),
         };
+    }
+
+    public void Start(string modelId, string promptVersion)
+    {
+        Require(InvestigationState.Queued);
+        ModelId = Guard.Required(modelId, MaxVersionLength, nameof(modelId));
+        PromptVersion = Guard.Required(promptVersion, MaxVersionLength, nameof(promptVersion));
+        State = InvestigationState.Running;
+    }
+
+    public void Complete(string resultJson)
+    {
+        Require(InvestigationState.Running);
+        ArgumentException.ThrowIfNullOrWhiteSpace(resultJson);
+        ResultJson = resultJson;
+        State = InvestigationState.Completed;
+    }
+
+    public void Fail(string errorCode)
+    {
+        Require(InvestigationState.Running);
+        ErrorCode = Guard.Required(errorCode, MaxErrorCodeLength, nameof(errorCode));
+        State = InvestigationState.Failed;
+    }
+
+    public void Cancel()
+    {
+        Require(InvestigationState.Running);
+        State = InvestigationState.Cancelled;
+    }
+
+    private void Require(InvestigationState expected)
+    {
+        if (State != expected)
+        {
+            throw new InvalidOperationException($"Investigation is {State}; expected {expected}.");
+        }
     }
 }

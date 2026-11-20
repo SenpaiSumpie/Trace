@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Trace.Application.Indexing;
+using Trace.Application.Investigations;
 
 namespace Trace.SecurityTests;
 
@@ -48,5 +49,18 @@ public class DemoDataGuardTests(WebApplicationFactory<Program> factory)
         var api = factory.WithEnvironment("Development", ("Embeddings:Provider", "deterministic-fake"));
 
         Assert.Equal("fake-hash-v1", api.Services.GetRequiredService<IEmbeddingProvider>().ModelId);
+    }
+
+    [Theory]
+    [InlineData("Production", "deterministic-fake")]
+    [InlineData("Production", "")]
+    [InlineData("Development", "no-such-provider")]
+    public void Chat_model_is_refused_when_fake_in_production_missing_or_unknown(string environment, string provider)
+    {
+        var api = factory.WithEnvironment(environment, ("Chat:Provider", provider));
+
+        var exception = Assert.Throws<InvalidOperationException>(() => api.Services.GetRequiredService<IChatModel>());
+
+        Assert.Contains("Chat:Provider", exception.Message, StringComparison.Ordinal);
     }
 }

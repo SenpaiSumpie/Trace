@@ -68,6 +68,7 @@ public sealed class TestDatabase : IAsyncDisposable
             {
                 [$"ConnectionStrings:{InfrastructureServiceCollectionExtensions.ConnectionStringName}"] = connectionString,
                 [InfrastructureServiceCollectionExtensions.EmbeddingProviderKey] = DeterministicFakeEmbeddingProvider.ProviderName,
+                [InfrastructureServiceCollectionExtensions.ChatProviderKey] = "deterministic-fake",
             })
             .Build();
 

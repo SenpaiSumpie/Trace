@@ -9,7 +9,7 @@ line range. The full specification is in
 
 ## Status
 
-**Indexing and retrieval over a fixture repository; no Q&A, API or UI for it yet.** What exists today:
+**A grounded question API over a fixture repository, driven by a fake model; no UI for it yet.** What exists today:
 
 - .NET solution with the modular-monolith project layout ([ADR-001](docs/adr/ADR-001-modular-monolith-and-worker.md)).
 - Domain model and PostgreSQL schema for repositories, index snapshots, source chunks,
@@ -26,17 +26,26 @@ line range. The full specification is in
   bounded read-only tools, `search_code` and `read_file_range`.
 - Server-side citation validation: a claimed path and line range is accepted only if it
   resolves inside the pinned snapshot.
-- API with `GET /health` (liveness) and `GET /health/ready` (database) endpoints and
-  ProblemDetails error responses. No product endpoints yet.
+- Question investigations: a bounded tool loop in which the model may only use those two tools,
+  citations become evidence only if they are real and were retrieved in the same run, and an
+  ungrounded answer is replaced by an insufficient-evidence result. Every step is stored as an
+  event ([ADR-006](docs/adr/ADR-006-llm-provider-adapter-and-tool-contracts.md),
+  [ADR-007](docs/adr/ADR-007-injection-and-untrusted-source-boundary.md)).
+- Chat model interface with one implementation: a deterministic **extractive fake** that points
+  at passages matching the question's words. It does not understand questions or code and is
+  refused in Production. No real language model is integrated.
+- HTTP API: `GET /api/v1/repositories`, `POST /api/v1/investigations`,
+  `GET /api/v1/investigations/{id}` and `.../events`, plus `GET /health` and `GET /health/ready`.
+  **Unauthenticated**; it only exposes repositories marked public (the demo fixture).
 - Worker host (no jobs yet).
 - React + TypeScript web shell that displays API health.
 - Unit, integration and security tests; CI for build, lint, format and tests.
 
-Not implemented: a real embedding provider, investigations (Q&A), authentication, GitHub
-integration, secret scanning. Retrieval is reachable only from tests; no endpoint calls it yet.
-Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+Not implemented: real embedding or chat providers (so no model-written answers yet),
+authentication, GitHub integration, issue-to-plan, background jobs, secret scanning, rate
+limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-Next task: grounded question workflow (handoff Section 15, Task 5).
+Next task: minimal UI and browser tests (handoff Section 15, Task 6).
 
 ## Prerequisites
 
@@ -62,6 +71,18 @@ npm run dev                                                  # http://localhost:
 In the Development environment the API applies pending migrations, seeds the public demo
 repository (`trace-demo/sample-repo`) and indexes the fixture directory on startup, using the
 fake embedding provider. Demo seeding and fake embeddings are refused in Production.
+
+Ask the fixture a question (bash, with `jq`):
+
+```sh
+repo=$(curl -s localhost:5120/api/v1/repositories | jq '.[0]')
+curl -s localhost:5120/api/v1/investigations -H 'Content-Type: application/json' -d "$(jq -n \
+  --argjson r "$repo" '{repositoryId: $r.id, snapshotId: $r.latestSnapshot.id, type: "question",
+  question: "Which requests are let through without an API key?"}')" | jq
+```
+
+The answer comes from the extractive fake model: it lists matching passages as evidence and
+says so; it is not a model-written explanation.
 
 The web dev server proxies `/api` and `/health` to the API (`TRACE_API_URL`, default
 `http://localhost:5120`).

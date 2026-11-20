@@ -9,6 +9,8 @@ namespace Trace.Infrastructure.Persistence;
 public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, TimeProvider timeProvider)
     : DbContext(options)
 {
+    internal const string InvestigationIdempotencyIndex = "ux_investigations_idempotency_key";
+
     internal const string ActiveSnapshotKeyIndex = "ux_index_snapshots_active_key";
 
     private const string Sha256Hex = "'^[0-9a-f]{64}$'";
@@ -20,6 +22,8 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
     public DbSet<SourceChunk> SourceChunks => Set<SourceChunk>();
 
     public DbSet<Investigation> Investigations => Set<Investigation>();
+
+    public DbSet<InvestigationEvent> InvestigationEvents => Set<InvestigationEvent>();
 
     public DbSet<EvidenceRef> EvidenceRefs => Set<EvidenceRef>();
 
@@ -50,6 +54,7 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
         modelBuilder.Entity<IndexSnapshot>(ConfigureIndexSnapshot);
         modelBuilder.Entity<SourceChunk>(ConfigureSourceChunk);
         modelBuilder.Entity<Investigation>(ConfigureInvestigation);
+        modelBuilder.Entity<InvestigationEvent>(ConfigureInvestigationEvent);
         modelBuilder.Entity<EvidenceRef>(ConfigureEvidenceRef);
         modelBuilder.Entity<Job>(ConfigureJob);
 
@@ -160,6 +165,16 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 
         investigation.Property(i => i.Question).HasMaxLength(Investigation.MaxQuestionLength);
         investigation.Property(i => i.ResultJson).HasColumnType("jsonb");
+        investigation.Property(i => i.IdempotencyKey).HasMaxLength(Investigation.MaxIdempotencyKeyLength);
+        investigation.Property(i => i.ModelId).HasMaxLength(Investigation.MaxVersionLength);
+        investigation.Property(i => i.PromptVersion).HasMaxLength(Investigation.MaxVersionLength);
+        investigation.Property(i => i.ErrorCode).HasMaxLength(Investigation.MaxErrorCodeLength);
+
+        // A repeated request with the same key must not create a second investigation.
+        investigation.HasIndex(i => new { i.RepositoryId, i.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("idempotency_key IS NOT NULL")
+            .HasDatabaseName(InvestigationIdempotencyIndex);
         investigation.Property(i => i.Type).HasMaxLength(20).HasConversion(
             value => EnumStorage.ToStorage(value),
             stored => EnumStorage.FromStorage<InvestigationType>(stored));
@@ -179,6 +194,30 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
             .OnDelete(DeleteBehavior.NoAction);
 
         investigation.HasAlternateKey(i => new { i.Id, i.SnapshotId });
+    }
+
+    private static void ConfigureInvestigationEvent(EntityTypeBuilder<InvestigationEvent> investigationEvent)
+    {
+        investigationEvent.ToTable("investigation_events", table =>
+        {
+            table.HasCheckConstraint(
+                "ck_investigation_events_event_type",
+                EnumStorage.CheckSql<InvestigationEventType>("event_type"));
+            table.HasCheckConstraint("ck_investigation_events_seq", "seq >= 1");
+        });
+
+        investigationEvent.Property(e => e.Summary).HasMaxLength(InvestigationEvent.MaxSummaryLength);
+        investigationEvent.Property(e => e.ToolName).HasMaxLength(InvestigationEvent.MaxToolNameLength);
+        investigationEvent.Property(e => e.MetadataJson).HasColumnType("jsonb");
+        investigationEvent.Property(e => e.EventType).HasMaxLength(30).HasConversion(
+            value => EnumStorage.ToStorage(value),
+            stored => EnumStorage.FromStorage<InvestigationEventType>(stored));
+
+        investigationEvent.HasOne<Investigation>().WithMany()
+            .HasForeignKey(e => e.InvestigationId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        investigationEvent.HasIndex(e => new { e.InvestigationId, e.Seq }).IsUnique();
     }
 
     private static void ConfigureEvidenceRef(EntityTypeBuilder<EvidenceRef> evidence)

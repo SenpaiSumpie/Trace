@@ -40,11 +40,24 @@ public sealed class EvidenceRef : Entity
             throw new InvalidOperationException("Evidence must come from the investigation's pinned snapshot.");
         }
 
+        return ForCode(investigation, chunk.Id, locatorJson, excerpt);
+    }
+
+    /// <summary>
+    /// For a chunk known only by ID. That the chunk belongs to the investigation's snapshot is
+    /// then enforced by the database's composite foreign key rather than here.
+    /// </summary>
+    public static EvidenceRef ForCode(Investigation investigation, Guid chunkId, string locatorJson, string excerpt)
+    {
+        ArgumentNullException.ThrowIfNull(investigation);
+        ArgumentException.ThrowIfNullOrWhiteSpace(locatorJson);
+        ArgumentException.ThrowIfNullOrEmpty(excerpt);
+
         return new EvidenceRef
         {
             InvestigationId = investigation.Id,
             SnapshotId = investigation.SnapshotId,
-            ChunkId = chunk.Id,
+            ChunkId = chunkId,
             SourceKind = EvidenceSourceKind.Code,
             LocatorJson = locatorJson,
             ExcerptHash = SourceChunk.ComputeContentHash(excerpt),
