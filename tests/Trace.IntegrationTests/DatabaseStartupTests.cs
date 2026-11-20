@@ -11,7 +11,7 @@ public class DatabaseStartupTests(PostgresFixture postgres, WebApplicationFactor
     : IClassFixture<WebApplicationFactory<Program>>
 {
     [Fact]
-    public async Task Startup_migrates_an_empty_database_and_seeds_the_demo_repository()
+    public async Task Startup_migrates_an_empty_database_then_seeds_and_indexes_the_demo_repository()
     {
         await using var database = await postgres.CreateDatabaseAsync(migrate: false);
 
@@ -25,6 +25,11 @@ public class DatabaseStartupTests(PostgresFixture postgres, WebApplicationFactor
         Assert.Equal(DemoData.RepositoryName, repository.Name);
         Assert.Equal(RepositoryVisibility.Public, repository.Visibility);
         Assert.Null(repository.GitHubRepoId);
+
+        var snapshot = await db.IndexSnapshots.SingleAsync();
+        Assert.Equal(repository.Id, snapshot.RepositoryId);
+        Assert.Equal(SnapshotStatus.Completed, snapshot.Status);
+        Assert.True(await db.SourceChunks.AnyAsync(chunk => chunk.Path == "src/TaskBoard.Api/Tasks/TaskRepository.cs"));
     }
 
     [Fact]
@@ -39,6 +44,7 @@ public class DatabaseStartupTests(PostgresFixture postgres, WebApplicationFactor
 
         await using var db = database.CreateContext();
         Assert.Equal(1, await db.Repositories.CountAsync());
+        Assert.Equal(1, await db.IndexSnapshots.CountAsync());
     }
 
     [Fact]

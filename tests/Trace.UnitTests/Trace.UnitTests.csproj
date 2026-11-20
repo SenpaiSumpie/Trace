@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trace.Domain\Trace.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Trace.Application\Trace.Application.csproj" />
+    <ProjectReference Include="..\..\src\Trace.Infrastructure\Trace.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

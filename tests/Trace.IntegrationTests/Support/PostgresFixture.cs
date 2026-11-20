@@ -1,9 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Npgsql;
 using Testcontainers.PostgreSql;
+using Trace.Application.Indexing;
 using Trace.Infrastructure;
+using Trace.Infrastructure.Embeddings;
 using Trace.Infrastructure.Persistence;
 
 namespace Trace.IntegrationTests.Support;
@@ -63,11 +67,13 @@ public sealed class TestDatabase : IAsyncDisposable
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [$"ConnectionStrings:{InfrastructureServiceCollectionExtensions.ConnectionStringName}"] = connectionString,
+                [InfrastructureServiceCollectionExtensions.EmbeddingProviderKey] = DeterministicFakeEmbeddingProvider.ProviderName,
             })
             .Build();
 
         provider = new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
+            .AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Development })
             .AddTraceInfrastructure()
             .BuildServiceProvider();
         scope = provider.CreateAsyncScope();
@@ -79,6 +85,24 @@ public sealed class TestDatabase : IAsyncDisposable
     public TraceDbContext CreateContext() => new(
         scope.ServiceProvider.GetRequiredService<DbContextOptions<TraceDbContext>>(),
         TimeProvider.System);
+
+    /// <summary>
+    /// Runs one index operation in its own scope, as a request or job would. The application's
+    /// configured embedding provider is used unless one is supplied.
+    /// </summary>
+    public async Task<IndexResult> IndexAsync(
+        Guid repositoryId,
+        IRepositorySource source,
+        IEmbeddingProvider? embeddings = null)
+    {
+        await using var operation = provider.CreateAsyncScope();
+        var indexer = embeddings is null
+            ? operation.ServiceProvider.GetRequiredService<SnapshotIndexer>()
+            : new SnapshotIndexer(
+                operation.ServiceProvider.GetRequiredService<ISnapshotStore>(), embeddings, TimeProvider.System);
+
+        return await indexer.IndexAsync(repositoryId, source);
+    }
 
     public async ValueTask DisposeAsync()
     {

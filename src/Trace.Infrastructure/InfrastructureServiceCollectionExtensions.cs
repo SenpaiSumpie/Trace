@@ -3,6 +3,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Trace.Application.Indexing;
+using Trace.Infrastructure.Embeddings;
 using Trace.Infrastructure.Persistence;
 
 namespace Trace.Infrastructure;
@@ -12,6 +14,11 @@ public static class InfrastructureServiceCollectionExtensions
     public const string ConnectionStringName = "Trace";
     public const string ApplyMigrationsOnStartupKey = "Database:ApplyMigrationsOnStartup";
     public const string SeedDemoDataKey = "Database:SeedDemoData";
+
+    /// <summary>Directory of the demo fixture repository; relative paths resolve against the content root.</summary>
+    public const string DemoFixturePathKey = "Demo:FixturePath";
+
+    public const string EmbeddingProviderKey = "Embeddings:Provider";
 
     public static IServiceCollection AddTraceInfrastructure(this IServiceCollection services)
     {
@@ -25,6 +32,10 @@ public static class InfrastructureServiceCollectionExtensions
             TraceDbContext.Configure(options, connectionString);
         });
 
+        services.AddSingleton(CreateEmbeddingProvider);
+        services.AddScoped<ISnapshotStore, EfSnapshotStore>();
+        services.AddScoped<SnapshotIndexer>();
+
         return services;
     }
 
@@ -37,10 +48,11 @@ public static class InfrastructureServiceCollectionExtensions
         CancellationToken cancellationToken = default)
     {
         var configuration = services.GetRequiredService<IConfiguration>();
+        var environment = services.GetRequiredService<IHostEnvironment>();
         var applyMigrations = IsEnabled(configuration, ApplyMigrationsOnStartupKey);
         var seedDemoData = IsEnabled(configuration, SeedDemoDataKey);
 
-        if (seedDemoData && services.GetRequiredService<IHostEnvironment>().IsProduction())
+        if (seedDemoData && environment.IsProduction())
         {
             throw new InvalidOperationException(
                 $"'{SeedDemoDataKey}' must not be enabled in the Production environment.");
@@ -61,7 +73,33 @@ public static class InfrastructureServiceCollectionExtensions
 
         if (seedDemoData)
         {
-            await DemoData.SeedAsync(db, cancellationToken);
+            var fixtureDirectory = configuration[DemoFixturePathKey] is { Length: > 0 } path
+                ? Path.GetFullPath(path, environment.ContentRootPath)
+                : null;
+            await DemoData.SeedAsync(
+                db, scope.ServiceProvider.GetRequiredService<SnapshotIndexer>(), fixtureDirectory, cancellationToken);
+        }
+    }
+
+    private static IEmbeddingProvider CreateEmbeddingProvider(IServiceProvider services)
+    {
+        var provider = services.GetRequiredService<IConfiguration>()[EmbeddingProviderKey];
+        switch (provider)
+        {
+            case DeterministicFakeEmbeddingProvider.ProviderName:
+                if (services.GetRequiredService<IHostEnvironment>().IsProduction())
+                {
+                    throw new InvalidOperationException(
+                        $"'{EmbeddingProviderKey}' must not be '{provider}' in the Production environment.");
+                }
+
+                return new DeterministicFakeEmbeddingProvider();
+
+            case null or "":
+                throw new InvalidOperationException($"'{EmbeddingProviderKey}' is not configured.");
+
+            default:
+                throw new InvalidOperationException($"'{EmbeddingProviderKey}' has unknown value '{provider}'.");
         }
     }
 

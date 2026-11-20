@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Pgvector;
 using Trace.Domain;
 
 namespace Trace.Infrastructure.Persistence;
@@ -7,6 +9,8 @@ namespace Trace.Infrastructure.Persistence;
 public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, TimeProvider timeProvider)
     : DbContext(options)
 {
+    internal const string ActiveSnapshotKeyIndex = "ux_index_snapshots_active_key";
+
     private const string Sha256Hex = "'^[0-9a-f]{64}$'";
 
     public DbSet<Repository> Repositories => Set<Repository>();
@@ -22,7 +26,7 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
     public DbSet<Job> Jobs => Set<Job>();
 
     internal static void Configure(DbContextOptionsBuilder builder, string connectionString) =>
-        builder.UseNpgsql(connectionString).UseSnakeCaseNamingConvention();
+        builder.UseNpgsql(connectionString, npgsql => npgsql.UseVector()).UseSnakeCaseNamingConvention();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -40,6 +44,8 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.HasPostgresExtension("vector");
+
         modelBuilder.Entity<Repository>(ConfigureRepository);
         modelBuilder.Entity<IndexSnapshot>(ConfigureIndexSnapshot);
         modelBuilder.Entity<SourceChunk>(ConfigureSourceChunk);
@@ -103,7 +109,7 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
         snapshot.HasIndex(s => new { s.RepositoryId, s.CommitSha, s.ParserVersion, s.EmbeddingModel })
             .IsUnique()
             .HasFilter("status <> 'failed'")
-            .HasDatabaseName("ux_index_snapshots_active_key");
+            .HasDatabaseName(ActiveSnapshotKeyIndex);
     }
 
     private static void ConfigureSourceChunk(EntityTypeBuilder<SourceChunk> chunk)
@@ -122,6 +128,15 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
         chunk.Property(c => c.Path).HasMaxLength(SourceChunk.MaxPathLength);
         chunk.Property(c => c.Language).HasMaxLength(SourceChunk.MaxLanguageLength);
         chunk.Property(c => c.ContentHash).HasMaxLength(64).IsFixedLength();
+        chunk.Property(c => c.Embedding)
+            .HasColumnType($"vector({SourceChunk.EmbeddingDimensions})")
+            .HasConversion(
+                values => new Vector(values),
+                vector => vector.ToArray(),
+                new ValueComparer<float[]>(
+                    (left, right) => left!.SequenceEqual(right!),
+                    values => values.Length,
+                    values => values));
 
         chunk.HasOne<IndexSnapshot>().WithMany()
             .HasForeignKey(c => c.SnapshotId)

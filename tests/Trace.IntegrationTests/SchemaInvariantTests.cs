@@ -377,9 +377,9 @@ public class SchemaInvariantTests(PostgresFixture postgres) : IAsyncLifetime
     private Task InsertChunkAsync(Guid snapshotId, int startLine, int endLine, string text) =>
         db.Database.ExecuteSqlAsync($"""
             INSERT INTO source_chunks
-                (id, snapshot_id, path, language, start_line, end_line, content_hash, text, created_at, updated_at)
+                (id, snapshot_id, path, language, start_line, end_line, content_hash, text, embedding, created_at, updated_at)
             VALUES
-                ({Guid.NewGuid()}, {snapshotId}, 'src/Other.cs', 'csharp', {startLine}, {endLine}, {Hash}, {text}, now(), now())
+                ({Guid.NewGuid()}, {snapshotId}, 'src/Other.cs', 'csharp', {startLine}, {endLine}, {Hash}, {text}, array_fill(0, ARRAY[{SourceChunk.EmbeddingDimensions}])::vector, now(), now())
             """);
 
     private Task InsertEvidenceAsync(Guid investigationId, Guid snapshotId, Guid? chunkId, string sourceKind) =>

@@ -40,7 +40,7 @@ public class DomainRuleTests
     [InlineData("src/")]
     public void Chunk_rejects_paths_that_are_not_plain_repository_relative(string path)
     {
-        Assert.Throws<ArgumentException>(() => SourceChunk.Create(BuildingSnapshot(), path, "csharp", 1, 1, "x"));
+        Assert.Throws<ArgumentException>(() => SourceChunk.Create(BuildingSnapshot(), path, "csharp", 1, 1, "x", Embedding));
     }
 
     [Theory]
@@ -49,7 +49,7 @@ public class DomainRuleTests
     public void Chunk_rejects_invalid_line_ranges(int startLine, int endLine)
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", startLine, endLine, "x"));
+            () => SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", startLine, endLine, "x", Embedding));
     }
 
     [Fact]
@@ -57,20 +57,30 @@ public class DomainRuleTests
     {
         var text = new string('x', SourceChunk.MaxTextLength + 1);
 
-        Assert.Throws<ArgumentException>(() => SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, text));
+        Assert.Throws<ArgumentException>(() => SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, text, Embedding));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(SourceChunk.EmbeddingDimensions - 1)]
+    [InlineData(SourceChunk.EmbeddingDimensions + 1)]
+    public void Chunk_rejects_embeddings_of_the_wrong_size(int dimensions)
+    {
+        Assert.Throws<ArgumentException>(
+            () => SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, "x", new float[dimensions]));
     }
 
     [Fact]
     public void Chunk_cannot_be_added_to_a_completed_snapshot()
     {
         Assert.Throws<InvalidOperationException>(
-            () => SourceChunk.Create(CompletedSnapshot(), "src/App.cs", "csharp", 1, 1, "x"));
+            () => SourceChunk.Create(CompletedSnapshot(), "src/App.cs", "csharp", 1, 1, "x", Embedding));
     }
 
     [Fact]
     public void Chunk_content_hash_is_the_sha256_of_its_utf8_text()
     {
-        var chunk = SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, "abc");
+        var chunk = SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, "abc", Embedding);
 
         Assert.Equal("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", chunk.ContentHash);
     }
@@ -93,9 +103,9 @@ public class DomainRuleTests
     public void Evidence_must_come_from_the_pinned_snapshot()
     {
         var pinned = BuildingSnapshot();
-        var pinnedChunk = SourceChunk.Create(pinned, "src/App.cs", "csharp", 1, 1, "x");
+        var pinnedChunk = SourceChunk.Create(pinned, "src/App.cs", "csharp", 1, 1, "x", Embedding);
         pinned.Complete(DateTimeOffset.UtcNow);
-        var foreignChunk = SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, "x");
+        var foreignChunk = SourceChunk.Create(BuildingSnapshot(), "src/App.cs", "csharp", 1, 1, "x", Embedding);
         var investigation = Investigation.Create(pinned, InvestigationType.Question, "q");
 
         var evidence = EvidenceRef.ForCode(investigation, pinnedChunk, "{}", "x");
@@ -114,6 +124,8 @@ public class DomainRuleTests
         Assert.NotEqual(first.Id, second.Id);
         Assert.Equal(7, first.Id.Version);
     }
+
+    private static readonly float[] Embedding = new float[SourceChunk.EmbeddingDimensions];
 
     private static IndexSnapshot BuildingSnapshot() =>
         IndexSnapshot.Start(Guid.NewGuid(), Sha, "main", "text-v1", "fake-v1");

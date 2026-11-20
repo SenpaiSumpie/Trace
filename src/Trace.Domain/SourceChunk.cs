@@ -12,6 +12,9 @@ public sealed class SourceChunk : Entity
     /// <summary>Upper bound on chunk text, in characters. Larger inputs must be split by the chunker.</summary>
     public const int MaxTextLength = 16_000;
 
+    /// <summary>Length of every stored embedding vector; fixed by the <c>vector</c> column type.</summary>
+    public const int EmbeddingDimensions = 1024;
+
     private SourceChunk()
     {
     }
@@ -34,13 +37,16 @@ public sealed class SourceChunk : Entity
 
     public string Text { get; private set; } = null!;
 
+    public float[] Embedding { get; private set; } = null!;
+
     public static SourceChunk Create(
         IndexSnapshot snapshot,
         string path,
         string language,
         int startLine,
         int endLine,
-        string text)
+        string text,
+        float[] embedding)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.Status != SnapshotStatus.Building)
@@ -56,6 +62,12 @@ public sealed class SourceChunk : Entity
             throw new ArgumentException($"Must be at most {MaxTextLength} characters.", nameof(text));
         }
 
+        ArgumentNullException.ThrowIfNull(embedding);
+        if (embedding.Length != EmbeddingDimensions)
+        {
+            throw new ArgumentException($"Must have exactly {EmbeddingDimensions} dimensions.", nameof(embedding));
+        }
+
         return new SourceChunk
         {
             SnapshotId = snapshot.Id,
@@ -65,6 +77,7 @@ public sealed class SourceChunk : Entity
             EndLine = endLine,
             ContentHash = ComputeContentHash(text),
             Text = text,
+            Embedding = [.. embedding],
         };
     }
 

@@ -27,7 +27,7 @@ internal static class TestGraph
         string commitSha = ShaA)
     {
         var snapshot = NewSnapshot(repository, commitSha);
-        var chunk = SourceChunk.Create(snapshot, "src/App.cs", "csharp", 1, 3, "line one\nline two\nline three");
+        var chunk = SourceChunk.Create(snapshot, "src/App.cs", "csharp", 1, 3, "line one\nline two\nline three", new float[SourceChunk.EmbeddingDimensions]);
         db.AddRange(snapshot, chunk);
         await db.SaveChangesAsync();
         return (snapshot, chunk);

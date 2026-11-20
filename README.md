@@ -9,22 +9,28 @@ line range. The full specification is in
 
 ## Status
 
-**Scaffold and database schema only.** What exists today:
+**Schema and a deterministic fixture indexer; no retrieval or Q&A yet.** What exists today:
 
 - .NET solution with the modular-monolith project layout ([ADR-001](docs/adr/ADR-001-modular-monolith-and-worker.md)).
 - Domain model and PostgreSQL schema for repositories, index snapshots, source chunks,
   investigations, evidence and jobs, with snapshot immutability and citation integrity
   enforced in the database ([ADR-004](docs/adr/ADR-004-snapshot-immutability-and-citations.md)).
+- Indexer that reads an allowlisted local repository directory, splits files into line-exact
+  chunks, embeds them and publishes an immutable snapshot. Re-indexing unchanged content is a no-op.
+- A synthetic fixture repository (`tests/fixtures/sample-repo`, a small task service with
+  deliberate defects) that is indexed on startup in Development.
+- Embedding provider interface with one implementation: a deterministic fake (hashed bag of
+  words) for tests and local demos. It has no semantic understanding and is refused in Production.
 - API with `GET /health` (liveness) and `GET /health/ready` (database) endpoints and
   ProblemDetails error responses. No product endpoints yet.
 - Worker host (no jobs yet).
 - React + TypeScript web shell that displays API health.
 - Unit, integration and security tests; CI for build, lint, format and tests.
 
-Not implemented: indexing, embeddings, retrieval, investigations, authentication, GitHub
-integration. Nothing reads or writes the tables yet except the demo-repository seed.
+Not implemented: a real embedding provider, retrieval, investigations, authentication, GitHub
+integration, secret scanning. Nothing queries the index yet.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-Next task: deterministic fixture indexer (handoff Section 15, Task 3).
+Next task: hybrid retrieval and citations (handoff Section 15, Task 4).
 
 ## Prerequisites
 
@@ -47,8 +53,9 @@ npm ci
 npm run dev                                                  # http://localhost:5173
 ```
 
-In the Development environment the API applies pending migrations and seeds the public demo
-repository (`trace-demo/sample-repo`) on startup. Demo seeding is refused in Production.
+In the Development environment the API applies pending migrations, seeds the public demo
+repository (`trace-demo/sample-repo`) and indexes the fixture directory on startup, using the
+fake embedding provider. Demo seeding and fake embeddings are refused in Production.
 
 The web dev server proxies `/api` and `/health` to the API (`TRACE_API_URL`, default
 `http://localhost:5120`).
@@ -92,6 +99,7 @@ src/Trace.Infrastructure/  Database, GitHub, LLM adapters
 src/Trace.Worker/          Background jobs
 src/Trace.Contracts/       Shared API DTOs
 tests/                     Unit, integration and security tests
+tests/fixtures/sample-repo Synthetic repository that TRACE indexes (not built or run)
 infra/                     Local Docker Compose
 docs/                      Handoff, ADRs, open questions
 ```
