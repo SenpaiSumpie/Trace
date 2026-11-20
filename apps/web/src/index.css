@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  --bg: #0e1116;
+  --text: #e6e8eb;
+  --muted: #9aa3ad;
+  --up: #4ade80;
+  --down: #f87171;
+
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 4rem 1rem;
+}
+
+h1 {
+  margin: 0;
+  letter-spacing: 0.2em;
+}
+
+.tagline {
+  color: var(--muted);
+}
+
+.status::before {
+  content: '';
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.status-up {
+  color: var(--up);
+}
+
+.status-down {
+  color: var(--down);
+}

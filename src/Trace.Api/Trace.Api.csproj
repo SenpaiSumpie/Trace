@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Trace.Application\Trace.Application.csproj" />
+    <ProjectReference Include="..\Trace.Contracts\Trace.Contracts.csproj" />
+    <ProjectReference Include="..\Trace.Infrastructure\Trace.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

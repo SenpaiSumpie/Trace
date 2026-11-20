@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Trace.Api/Trace.Api.csproj" />
+    <Project Path="src/Trace.Application/Trace.Application.csproj" />
+    <Project Path="src/Trace.Contracts/Trace.Contracts.csproj" />
+    <Project Path="src/Trace.Domain/Trace.Domain.csproj" />
+    <Project Path="src/Trace.Infrastructure/Trace.Infrastructure.csproj" />
+    <Project Path="src/Trace.Worker/Trace.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Trace.IntegrationTests/Trace.IntegrationTests.csproj" />
+    <Project Path="tests/Trace.SecurityTests/Trace.SecurityTests.csproj" />
+    <Project Path="tests/Trace.UnitTests/Trace.UnitTests.csproj" />
+  </Folder>
+</Solution>
