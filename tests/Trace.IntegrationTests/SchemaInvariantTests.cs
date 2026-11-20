@@ -317,14 +317,14 @@ public class SchemaInvariantTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task Job_dedupe_key_is_unique_per_kind()
     {
-        db.Add(Job.Enqueue("index", "repository:1", "delivery-1", "{}"));
-        db.Add(Job.Enqueue("investigate", "repository:1", "delivery-1", "{}"));
+        db.Add(Job.Enqueue("index", "repository:1", "delivery-1", "{}", DateTimeOffset.UtcNow));
+        db.Add(Job.Enqueue("investigate", "repository:1", "delivery-1", "{}", DateTimeOffset.UtcNow));
         await db.SaveChangesAsync();
 
         await using var other = database.CreateContext();
-        other.Add(Job.Enqueue("index", "repository:1", "delivery-1", "{}"));
+        other.Add(Job.Enqueue("index", "repository:1", "delivery-1", "{}", DateTimeOffset.UtcNow));
 
-        await AssertRejectedAsync(() => other.SaveChangesAsync(), UniqueViolation, "ix_jobs_kind_dedupe_key");
+        await AssertRejectedAsync(() => other.SaveChangesAsync(), UniqueViolation, "ux_jobs_kind_dedupe_key");
     }
 
     [Fact]

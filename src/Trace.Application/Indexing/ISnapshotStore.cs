@@ -23,5 +23,12 @@ public interface ISnapshotStore
     /// <summary>Marks a still-building snapshot as failed so the same key can be indexed again.</summary>
     Task MarkFailedAsync(Guid snapshotId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Marks as failed every building snapshot of the repository that nobody is building any
+    /// more: builds started by <paramref name="jobId"/> itself (an earlier attempt), by a job that
+    /// is no longer running under a valid lease, or by no job and long ago.
+    /// </summary>
+    Task FailAbandonedBuildsAsync(Guid repositoryId, Guid jobId, CancellationToken cancellationToken = default);
+
     Task<int> CountChunksAsync(Guid snapshotId, CancellationToken cancellationToken = default);
 }

@@ -99,6 +99,10 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(255)")
                         .HasColumnName("branch");
 
+                    b.Property<Guid?>("BuildingJobId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("building_job_id");
+
                     b.Property<string>("CommitSha")
                         .IsRequired()
                         .HasMaxLength(40)
@@ -299,7 +303,7 @@ namespace Trace.Infrastructure.Persistence.Migrations
 
                     b.ToTable("investigation_events", null, t =>
                         {
-                            t.HasCheckConstraint("ck_investigation_events_event_type", "event_type IN ('started', 'tool_called', 'tool_failed', 'tool_rejected', 'citation_rejected', 'completed', 'failed')");
+                            t.HasCheckConstraint("ck_investigation_events_event_type", "event_type IN ('started', 'tool_called', 'tool_failed', 'tool_rejected', 'citation_rejected', 'completed', 'failed', 'cancelled')");
 
                             t.HasCheckConstraint("ck_investigation_events_seq", "seq >= 1");
                         });
@@ -314,6 +318,10 @@ namespace Trace.Infrastructure.Persistence.Migrations
                     b.Property<int>("Attempts")
                         .HasColumnType("integer")
                         .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("AvailableAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("available_at");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -336,9 +344,17 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("kind");
 
+                    b.Property<Guid?>("LeaseToken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lease_token");
+
                     b.Property<DateTimeOffset?>("LeaseUntil")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("lease_until");
+
+                    b.Property<int>("MaxAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_attempts");
 
                     b.Property<string>("PayloadJson")
                         .IsRequired()
@@ -370,14 +386,16 @@ namespace Trace.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Kind", "DedupeKey")
                         .IsUnique()
-                        .HasDatabaseName("ix_jobs_kind_dedupe_key");
+                        .HasDatabaseName("ux_jobs_kind_dedupe_key");
 
-                    b.HasIndex("Status", "CreatedAt")
-                        .HasDatabaseName("ix_jobs_status_created_at");
+                    b.HasIndex("Status", "AvailableAt")
+                        .HasDatabaseName("ix_jobs_status_available_at");
 
                     b.ToTable("jobs", null, t =>
                         {
-                            t.HasCheckConstraint("ck_jobs_attempts", "attempts >= 0");
+                            t.HasCheckConstraint("ck_jobs_attempts", "attempts >= 0 AND max_attempts >= 1");
+
+                            t.HasCheckConstraint("ck_jobs_lease", "(status = 'running') = (lease_until IS NOT NULL AND lease_token IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_jobs_status", "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')");
                         });

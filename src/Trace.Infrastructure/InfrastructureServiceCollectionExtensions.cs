@@ -5,9 +5,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Trace.Application.Indexing;
 using Trace.Application.Investigations;
+using Trace.Application.Jobs;
 using Trace.Application.Retrieval;
 using Trace.Infrastructure.Chat;
 using Trace.Infrastructure.Embeddings;
+using Trace.Infrastructure.Jobs;
 using Trace.Infrastructure.Persistence;
 
 namespace Trace.Infrastructure;
@@ -26,6 +28,7 @@ public static class InfrastructureServiceCollectionExtensions
 
     public static IServiceCollection AddTraceInfrastructure(this IServiceCollection services)
     {
+        services.AddLogging();
         services.TryAddSingleton(TimeProvider.System);
         services.AddDbContext<TraceDbContext>((provider, options) =>
         {
@@ -48,8 +51,30 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IInvestigationStore, EfInvestigationStore>();
         services.AddScoped<QuestionInvestigator>();
 
+        services.TryAddSingleton(new JobOptions());
+        services.AddSingleton<IJobSignal, JobSignal>();
+        services.AddScoped<IJobQueue, EfJobQueue>();
+        services.AddScoped<IRepositorySourceResolver, ConfiguredRepositorySourceResolver>();
+        services.AddScoped<IJobHandler, InvestigationJobHandler>();
+        services.AddScoped<IJobHandler, IndexJobHandler>();
+        services.AddScoped<JobProcessor>();
+        services.AddScoped<JobService>();
+
         return services;
     }
+
+    /// <summary>
+    /// Makes this host process jobs from the queue. The worker always does; the API does only
+    /// when <c>Jobs:ProcessInThisHost</c> is true, which is how a single process serves local
+    /// development and browser tests.
+    /// </summary>
+    public static IServiceCollection AddTraceJobProcessing(this IServiceCollection services) =>
+        services.AddHostedService<JobWorkerService>();
+
+    public const string ProcessJobsInThisHostKey = "Jobs:ProcessInThisHost";
+
+    public static bool ShouldProcessJobsInThisHost(IConfiguration configuration) =>
+        IsEnabled(configuration, ProcessJobsInThisHostKey);
 
     /// <summary>
     /// Applies migrations and/or seeds demo data when the corresponding settings are enabled.

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Trace.Application.Investigations;
+using Trace.Application.Jobs;
 using Trace.Application.Retrieval;
 using Trace.Domain;
 using Trace.IntegrationTests.Support;
@@ -298,7 +299,7 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
     }
 
     [Fact]
-    public async Task Cancelled_request_leaves_the_investigation_cancelled()
+    public async Task Cancellation_is_passed_up_to_the_job_queue_which_then_records_it()
     {
         using var cancellation = new CancellationTokenSource();
         var model = new ScriptedChatModel(_ =>
@@ -309,9 +310,17 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => AskAsync(model, cancellationToken: cancellation.Token));
 
+        // The run itself does not decide what an interruption means: it may be a cancel or a worker stopping.
         await using var db = indexed.Database.CreateContext();
-        var latest = await db.Investigations.OrderByDescending(i => i.CreatedAt).FirstAsync();
-        Assert.Equal(InvestigationState.Cancelled, latest.State);
+        var interrupted = await db.Investigations.AsNoTracking().OrderByDescending(i => i.CreatedAt).FirstAsync();
+        Assert.Equal(InvestigationState.Running, interrupted.State);
+
+        await using var scope = indexed.Database.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<QuestionInvestigator>().AbandonAsync(interrupted.Id, cancelled: true, jobErrorCode: null);
+
+        var record = (await scope.ServiceProvider.GetRequiredService<IInvestigationStore>().GetAsync(interrupted.Id))!;
+        Assert.Equal(InvestigationState.Cancelled, record.Investigation.State);
+        Assert.Equal(InvestigationEventType.Cancelled, record.Events[^1].EventType);
     }
 
     [Fact]
@@ -378,10 +387,17 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
             services.GetRequiredService<IInvestigationStore>(),
             services.GetRequiredService<SourceTools>(),
             services.GetRequiredService<CitationValidator>(),
-            model);
+            model,
+            TimeProvider.System,
+            services.GetRequiredService<IJobSignal>());
 
-        return await investigator.AskAsync(
+        // Create and run in one go, as a single final job attempt would. Queueing, retries and
+        // cancellation through the job queue are covered by InvestigationJobTests.
+        var created = await investigator.CreateAsync(
             new AskQuestion(repositoryId ?? indexed.RepositoryId, snapshotId ?? indexed.SnapshotId, question, idempotencyKey),
-            cancellationToken);
+            CancellationToken.None);
+        await investigator.RunAsync(created.Investigation.Id, attempt: 1, maxAttempts: 1, cancellationToken);
+
+        return (await services.GetRequiredService<IInvestigationStore>().GetAsync(created.Investigation.Id))!;
     }
 }

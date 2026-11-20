@@ -37,8 +37,6 @@ public class InvestigationRuleTests
     {
         var queued = NewInvestigation();
         Assert.Throws<InvalidOperationException>(() => queued.Complete("{}"));
-        Assert.Throws<InvalidOperationException>(() => queued.Fail("x"));
-        Assert.Throws<InvalidOperationException>(queued.Cancel);
 
         var finished = NewInvestigation();
         finished.Start("m", "p");
@@ -46,6 +44,24 @@ public class InvestigationRuleTests
         Assert.Throws<InvalidOperationException>(() => finished.Start("m", "p"));
         Assert.Throws<InvalidOperationException>(() => finished.Fail("x"));
         Assert.Throws<InvalidOperationException>(() => finished.Complete("{}"));
+        Assert.Throws<InvalidOperationException>(finished.Cancel);
+    }
+
+    [Fact]
+    public void Investigation_can_be_cancelled_or_failed_before_it_starts_and_restarted_while_running()
+    {
+        var cancelledWhileQueued = NewInvestigation();
+        cancelledWhileQueued.Cancel();
+        Assert.Equal(InvestigationState.Cancelled, cancelledWhileQueued.State);
+
+        var failedWhileQueued = NewInvestigation();
+        failedWhileQueued.Fail("worker_interrupted");
+        Assert.Equal(InvestigationState.Failed, failedWhileQueued.State);
+
+        var interrupted = NewInvestigation();
+        interrupted.Start("m", "p");
+        interrupted.Start("m", "p");
+        Assert.Equal(InvestigationState.Running, interrupted.State);
     }
 
     [Fact]

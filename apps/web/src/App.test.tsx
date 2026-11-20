@@ -19,6 +19,7 @@ const repository: Repository = {
 
 const answered: Investigation = {
   investigationId: 'inv-1',
+  jobId: 'job-1',
   repositoryId: 'repo-1',
   snapshotId: 'snap-1',
   commitSha: repository.latestSnapshot!.commitSha,
@@ -119,6 +120,53 @@ test('asks the selected repository at its latest snapshot and shows the answer, 
     question: 'Why does page one skip results?',
   })
   expect(body.idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
+})
+
+test('waits for a queued investigation, showing its steps as it runs, then shows the result', async () => {
+  const queued: Investigation = { ...answered, state: 'queued', result: null, modelId: null, promptVersion: null }
+  let polls = 0
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'POST /api/v1/investigations': () => json(queued, 202),
+    'GET /api/v1/investigations/inv-1': () => json(++polls === 1 ? { ...queued, state: 'running' } : answered),
+    'GET /api/v1/investigations/inv-1/events': () => json(events.slice(0, polls === 0 ? 0 : polls === 1 ? 2 : 3)),
+  })
+
+  await ask('Why does page one skip results?')
+
+  expect(await screen.findByText('Waiting for a worker…')).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(screen.queryByRole('heading', { name: 'Answer' })).toBeNull()
+
+  expect(await screen.findByText('Looking through the code…', undefined, { timeout: 3000 })).toBeTruthy()
+  expect(await screen.findByText('Searched the code for "page": 5 result(s).', undefined, { timeout: 3000 })).toBeTruthy()
+
+  expect(await screen.findByRole('heading', { name: 'Answer' }, { timeout: 3000 })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+  expect(await screen.findByText('Answered with 1 validated evidence reference(s).')).toBeTruthy()
+})
+
+test('cancels a running investigation through its job', async () => {
+  const running: Investigation = { ...answered, state: 'running', result: null }
+  let cancelled = false
+  const fetchMock = renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'POST /api/v1/investigations': () => json(running, 202),
+    'POST /api/v1/jobs/job-1/cancel': () => {
+      cancelled = true
+      return json({ id: 'job-1', status: 'running', cancelRequested: true }, 202)
+    },
+    'GET /api/v1/investigations/inv-1': () => json(cancelled ? { ...running, state: 'cancelled' } : running),
+    'GET /api/v1/investigations/inv-1/events': () => json(events.slice(0, 1)),
+  })
+
+  await ask('Why does page one skip results?')
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+  expect(await screen.findByRole('heading', { name: 'The investigation was cancelled' }, { timeout: 3000 })).toBeTruthy()
+  expect(fetchMock.mock.calls.some(([input, init]) => String(input) === '/api/v1/jobs/job-1/cancel' && init?.method === 'POST')).toBe(true)
+  expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
 test('shows the insufficient-evidence state without an evidence section', async () => {

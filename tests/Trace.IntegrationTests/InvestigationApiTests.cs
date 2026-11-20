@@ -55,22 +55,27 @@ public class InvestigationApiTests(DemoApi api) : IClassFixture<DemoApi>
     }
 
     [Fact]
-    public async Task Asking_a_fixture_question_returns_an_answer_with_inspectable_evidence_and_events()
+    public async Task Asking_a_fixture_question_is_accepted_and_completes_with_inspectable_evidence_and_events()
     {
         var repository = await api.DemoRepositoryAsync();
 
         using var response = await PostAsync(repository.Id, repository.LatestSnapshot!.Id, Question);
-        var created = await response.Content.ReadFromJsonAsync<InvestigationResponse>();
+        var accepted = await response.Content.ReadFromJsonAsync<InvestigationResponse>();
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.NotNull(created);
-        Assert.Equal($"/api/v1/investigations/{created.InvestigationId}", response.Headers.Location!.AbsolutePath);
-        Assert.Equal(("question", Question, "completed"), (created.Type, created.Question, created.State));
-        Assert.Equal(repository.LatestSnapshot.CommitSha, created.CommitSha);
-        Assert.Equal(("fake-extractive-v1", "question-v1"), (created.ModelId, created.PromptVersion));
-        Assert.Null(created.ErrorCode);
+        // The request only queues the work.
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.NotNull(accepted);
+        Assert.Equal($"/api/v1/investigations/{accepted.InvestigationId}", response.Headers.Location!.AbsolutePath);
+        Assert.Contains(accepted.State, new[] { "queued", "running", "completed" });
+        Assert.NotNull(accepted.JobId);
 
-        var result = created.Result!;
+        var finished = await WaitUntilFinishedAsync(accepted.InvestigationId);
+        Assert.Equal(("question", Question, "completed"), (finished.Type, finished.Question, finished.State));
+        Assert.Equal(repository.LatestSnapshot.CommitSha, finished.CommitSha);
+        Assert.Equal(("fake-extractive-v1", "question-v1"), (finished.ModelId, finished.PromptVersion));
+        Assert.Null(finished.ErrorCode);
+
+        var result = finished.Result!;
         Assert.Equal("answered", result.Outcome);
         Assert.StartsWith("Extractive test model", result.Answer, StringComparison.Ordinal);
         Assert.NotEmpty(result.Evidence);
@@ -78,19 +83,20 @@ public class InvestigationApiTests(DemoApi api) : IClassFixture<DemoApi>
         Assert.All(result.Evidence, evidence =>
         {
             Assert.Equal("code", evidence.Source);
-            Assert.Equal(created.CommitSha, evidence.CommitSha);
+            Assert.Equal(finished.CommitSha, evidence.CommitSha);
             var lines = SampleRepo.ReadLines(evidence.Path);
             Assert.Equal(string.Join('\n', lines[(evidence.StartLine - 1)..evidence.EndLine]), evidence.Excerpt);
         });
-
-        var fetched = await api.Client.GetFromJsonAsync<InvestigationResponse>(response.Headers.Location);
-        Assert.Equal(JsonSerializer.Serialize(created), JsonSerializer.Serialize(fetched));
 
         var events = await api.Client.GetFromJsonAsync<List<InvestigationEventResponse>>($"{response.Headers.Location}/events");
         Assert.NotNull(events);
         Assert.Equal(["started", "tool_called", "completed"], events.Select(e => e.EventType));
         Assert.Equal([1, 2, 3], events.Select(e => e.Seq));
         Assert.Equal("search_code", events[1].ToolName);
+
+        var job = await api.Client.GetFromJsonAsync<JobResponse>($"/api/v1/jobs/{accepted.JobId}");
+        Assert.Equal(("investigation.run", "succeeded", 1), (job!.Kind, job.Status, job.Attempts));
+        Assert.False(job.CancelRequested);
     }
 
     [Fact]
@@ -99,13 +105,62 @@ public class InvestigationApiTests(DemoApi api) : IClassFixture<DemoApi>
         var repository = await api.DemoRepositoryAsync();
 
         using var response = await PostAsync(repository.Id, repository.LatestSnapshot!.Id, "xyzzy qwfpgj zxcvbnm");
-        var created = await response.Content.ReadFromJsonAsync<InvestigationResponse>();
+        var accepted = await response.Content.ReadFromJsonAsync<InvestigationResponse>();
+        var finished = await WaitUntilFinishedAsync(accepted!.InvestigationId);
 
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        Assert.Equal("completed", created!.State);
-        Assert.Equal("insufficient_evidence", created.Result!.Outcome);
-        Assert.Empty(created.Result.Evidence);
-        Assert.NotEmpty(created.Result.Limitations);
+        Assert.Equal("completed", finished.State);
+        Assert.Equal("insufficient_evidence", finished.Result!.Outcome);
+        Assert.Empty(finished.Result.Evidence);
+        Assert.NotEmpty(finished.Result.Limitations);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_job_is_accepted_and_is_harmless_once_it_has_finished()
+    {
+        var repository = await api.DemoRepositoryAsync();
+        using var response = await PostAsync(repository.Id, repository.LatestSnapshot!.Id, Question);
+        var accepted = await response.Content.ReadFromJsonAsync<InvestigationResponse>();
+        var finished = await WaitUntilFinishedAsync(accepted!.InvestigationId);
+
+        using var cancel = await api.Client.PostAsync($"/api/v1/jobs/{accepted.JobId}/cancel", content: null);
+        var job = await cancel.Content.ReadFromJsonAsync<JobResponse>();
+
+        Assert.Equal(HttpStatusCode.Accepted, cancel.StatusCode);
+        Assert.Equal("succeeded", job!.Status);
+        Assert.Equal("completed", (await WaitUntilFinishedAsync(finished.InvestigationId)).State);
+    }
+
+    [Fact]
+    public async Task Re_indexing_is_queued_as_a_job_and_an_unchanged_repository_keeps_its_snapshot()
+    {
+        var repository = await api.DemoRepositoryAsync();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/repositories/{repository.Id}/index-jobs");
+        request.Headers.Add("Idempotency-Key", "reindex-once");
+
+        using var response = await api.Client.SendAsync(request);
+        var job = await response.Content.ReadFromJsonAsync<JobResponse>();
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.Equal("repository.index", job!.Kind);
+        Assert.Equal($"/api/v1/jobs/{job.Id}", response.Headers.Location!.AbsolutePath);
+
+        var finished = await WaitUntilJobFinishedAsync(job.Id);
+        Assert.Equal("succeeded", finished.Status);
+        Assert.Equal(repository.LatestSnapshot!.Id, (await api.DemoRepositoryAsync()).LatestSnapshot!.Id);
+    }
+
+    [Fact]
+    public async Task Unknown_job_or_repository_is_not_found_for_job_endpoints()
+    {
+        using var job = await api.Client.GetAsync($"/api/v1/jobs/{Guid.NewGuid()}");
+        using var cancel = await api.Client.PostAsync($"/api/v1/jobs/{Guid.NewGuid()}/cancel", content: null);
+        using var index = await api.Client.PostAsync($"/api/v1/repositories/{Guid.NewGuid()}/index-jobs", content: null);
+
+        Assert.All(new[] { job, cancel, index }, response =>
+        {
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        });
     }
 
     [Fact]
@@ -224,6 +279,38 @@ public class InvestigationApiTests(DemoApi api) : IClassFixture<DemoApi>
         api.Client.PostAsJsonAsync(
             "/api/v1/investigations",
             new CreateInvestigationRequest(repositoryId, snapshotId, "question", question, idempotencyKey));
+
+    private async Task<InvestigationResponse> WaitUntilFinishedAsync(Guid investigationId)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            var investigation = await api.Client.GetFromJsonAsync<InvestigationResponse>($"/api/v1/investigations/{investigationId}");
+            if (investigation!.State is "completed" or "failed" or "cancelled")
+            {
+                return investigation;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("The investigation did not finish in time.");
+    }
+
+    private async Task<JobResponse> WaitUntilJobFinishedAsync(Guid jobId)
+    {
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            var job = await api.Client.GetFromJsonAsync<JobResponse>($"/api/v1/jobs/{jobId}");
+            if (job!.Status is "succeeded" or "failed" or "cancelled")
+            {
+                return job;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("The job did not finish in time.");
+    }
 
     private Task<HttpResponseMessage> PostRawAsync(string body) =>
         api.Client.PostAsync("/api/v1/investigations", new StringContent(body, Encoding.UTF8, "application/json"));

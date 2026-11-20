@@ -1,9 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { type Evidence, type Investigation, listEvents } from './api.ts'
 
+export const POLL_INTERVAL_MS = 500
+
 const failureReasons: Record<string, string> = {
   invalid_model_output: 'The model did not return a usable answer, so nothing is shown.',
   model_error: 'The language model could not be reached.',
+  worker_interrupted: 'The worker stopped repeatedly before it could finish.',
+  timed_out: 'It took too long.',
   internal_error: 'Something went wrong inside TRACE.',
 }
 
@@ -79,7 +83,7 @@ export function InvestigationView({ investigation }: { investigation: Investigat
         </>
       )}
 
-      <Steps investigationId={investigation.investigationId} />
+      <Steps investigationId={investigation.investigationId} live={false} />
 
       <p className="provenance">
         Read at commit <code>{investigation.commitSha.slice(0, 12)}</code>
@@ -124,10 +128,12 @@ function EvidencePassage({ evidence }: { evidence: Evidence }) {
   )
 }
 
-function Steps({ investigationId }: { investigationId: string }) {
+/** The steps taken so far. While `live`, the list is refreshed as the investigation runs. */
+export function Steps({ investigationId, live }: { investigationId: string; live: boolean }) {
   const events = useQuery({
-    queryKey: ['investigation-events', investigationId],
+    queryKey: ['investigation-events', investigationId, live ? 'live' : 'final'],
     queryFn: () => listEvents(investigationId),
+    refetchInterval: live ? POLL_INTERVAL_MS : false,
   })
 
   return (

@@ -77,6 +77,25 @@ internal sealed class EfSnapshotStore(TraceDbContext db, TimeProvider timeProvid
                 cancellationToken);
     }
 
+    public Task FailAbandonedBuildsAsync(Guid repositoryId, Guid jobId, CancellationToken cancellationToken = default)
+    {
+        db.ChangeTracker.Clear();
+        var now = timeProvider.GetUtcNow();
+        var orphanCutoff = now - TimeSpan.FromMinutes(10);
+        return db.Database.ExecuteSqlAsync(
+            $"""
+            UPDATE index_snapshots s
+            SET status = 'failed', updated_at = {now}
+            WHERE s.repository_id = {repositoryId} AND s.status = 'building'
+              AND (s.building_job_id = {jobId}
+                OR (s.building_job_id IS NULL AND s.created_at < {orphanCutoff})
+                OR (s.building_job_id IS NOT NULL AND NOT EXISTS (
+                    SELECT 1 FROM jobs j
+                    WHERE j.id = s.building_job_id AND j.status = 'running' AND j.lease_until > {now})))
+            """,
+            cancellationToken);
+    }
+
     public Task<int> CountChunksAsync(Guid snapshotId, CancellationToken cancellationToken = default) =>
         db.SourceChunks.CountAsync(c => c.SnapshotId == snapshotId, cancellationToken);
 }

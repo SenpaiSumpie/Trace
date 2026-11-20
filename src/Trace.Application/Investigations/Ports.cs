@@ -22,18 +22,29 @@ public interface IRepositoryCatalog
     Task<bool> IsVisibleAsync(Guid repositoryId, CancellationToken cancellationToken = default);
 }
 
+/// <param name="JobId">The background job running the investigation, if it was queued through one.</param>
 public sealed record InvestigationRecord(
     Investigation Investigation,
     string CommitSha,
-    IReadOnlyList<InvestigationEvent> Events);
+    IReadOnlyList<InvestigationEvent> Events,
+    Guid? JobId);
 
 public interface IInvestigationStore
 {
     Task<Investigation?> FindByIdempotencyKeyAsync(
         Guid repositoryId, string idempotencyKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Persists a new investigation. Returns false if its idempotency key is already taken.</summary>
-    Task<bool> TryAddAsync(Investigation investigation, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Persists a new investigation and the job that will run it, atomically. Returns false,
+    /// storing neither, if the investigation's idempotency key is already taken.
+    /// </summary>
+    Task<bool> TryAddAsync(Investigation investigation, Job job, CancellationToken cancellationToken = default);
+
+    /// <summary>The investigation, tracked for changes, regardless of repository visibility (workers only).</summary>
+    Task<Investigation?> FindForUpdateAsync(Guid investigationId, CancellationToken cancellationToken = default);
+
+    /// <summary>The highest event sequence number recorded so far, or 0.</summary>
+    Task<int> GetLastEventSeqAsync(Guid investigationId, CancellationToken cancellationToken = default);
 
     Task AppendEventAsync(InvestigationEvent investigationEvent, CancellationToken cancellationToken = default);
 

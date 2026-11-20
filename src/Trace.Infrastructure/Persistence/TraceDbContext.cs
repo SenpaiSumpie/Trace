@@ -11,6 +11,8 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 {
     internal const string InvestigationIdempotencyIndex = "ux_investigations_idempotency_key";
 
+    internal const string JobDedupeIndex = "ux_jobs_kind_dedupe_key";
+
     internal const string ActiveSnapshotKeyIndex = "ux_index_snapshots_active_key";
 
     private const string Sha256Hex = "'^[0-9a-f]{64}$'";
@@ -257,20 +259,27 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
         job.ToTable("jobs", table =>
         {
             table.HasCheckConstraint("ck_jobs_status", EnumStorage.CheckSql<JobStatus>("status"));
-            table.HasCheckConstraint("ck_jobs_attempts", "attempts >= 0");
+            table.HasCheckConstraint("ck_jobs_attempts", "attempts >= 0 AND max_attempts >= 1");
+
+            // Exactly the running jobs hold a lease.
+            table.HasCheckConstraint(
+                "ck_jobs_lease",
+                "(status = 'running') = (lease_until IS NOT NULL AND lease_token IS NOT NULL)");
         });
 
         job.Property(j => j.Kind).HasMaxLength(Job.MaxKindLength);
         job.Property(j => j.TenantScope).HasMaxLength(Job.MaxScopeLength);
         job.Property(j => j.DedupeKey).HasMaxLength(Job.MaxDedupeKeyLength);
         job.Property(j => j.PayloadJson).HasColumnType("jsonb");
-        job.Property(j => j.ErrorCode).HasMaxLength(100);
+        job.Property(j => j.ErrorCode).HasMaxLength(Job.MaxErrorCodeLength);
         job.Property(j => j.Status).HasMaxLength(20).HasConversion(
             value => EnumStorage.ToStorage(value),
             stored => EnumStorage.FromStorage<JobStatus>(stored));
 
-        job.HasIndex(j => new { j.Kind, j.DedupeKey }).IsUnique();
-        job.HasIndex(j => new { j.Status, j.CreatedAt });
+        job.HasIndex(j => new { j.Kind, j.DedupeKey }).IsUnique().HasDatabaseName(JobDedupeIndex);
+
+        // Serves the claim query: due queued jobs and expired leases, oldest first.
+        job.HasIndex(j => new { j.Status, j.AvailableAt });
     }
 
     private void StampTimestamps()

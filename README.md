@@ -34,20 +34,22 @@ line range. The full specification is in
 - Chat model interface with one implementation: a deterministic **extractive fake** that points
   at passages matching the question's words. It does not understand questions or code and is
   refused in Production. No real language model is integrated.
-- HTTP API: `GET /api/v1/repositories`, `POST /api/v1/investigations`,
-  `GET /api/v1/investigations/{id}` and `.../events`, plus `GET /health` and `GET /health/ready`.
+- HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
+  investigation and its events, queue a re-index, read and cancel jobs; plus `GET /health` and
+  `GET /health/ready`.
   **Unauthenticated**; it only exposes repositories marked public (the demo fixture).
 - Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
   listings with real line numbers, what was not settled, and every step the investigation took.
-- Worker host (no jobs yet).
+- Durable background jobs in PostgreSQL: investigations and indexing are queued and run by the
+  worker with leases, retries with backoff, takeover when a worker dies, and cancellation
+  ([ADR-005](docs/adr/ADR-005-durable-jobs-and-idempotency.md)).
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
 Not implemented: real embedding or chat providers (so no model-written answers yet),
-authentication, GitHub integration, issue-to-plan, background jobs, secret scanning, rate
-limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+authentication, GitHub integration, issue-to-plan, secret scanning, rate limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-The six tasks of the first sprint (handoff Section 15) are done. Next are the P0 follow-ups: GitHub App and authentication, durable jobs, real model providers, deployment.
+The six tasks of the first sprint (handoff Section 15) are done. Durable jobs are done too. Remaining P0 follow-ups: real model providers, GitHub App and authentication, deployment.
 
 ## Prerequisites
 
@@ -63,7 +65,7 @@ docker compose --env-file .env -f infra/docker-compose.yml up -d
 
 dotnet build
 dotnet run --project src/Trace.Api --launch-profile http     # http://localhost:5120/health/ready
-dotnet run --project src/Trace.Worker
+dotnet run --project src/Trace.Worker                        # optional locally, see below
 
 cd apps/web
 npm ci
@@ -74,7 +76,11 @@ Open http://localhost:5173, type a question about the demo repository and press 
 
 In the Development environment the API applies pending migrations, seeds the public demo
 repository (`trace-demo/sample-repo`) and indexes the fixture directory on startup, using the
-fake embedding provider. Demo seeding and fake embeddings are refused in Production.
+fake embedding provider. Demo seeding and the fake models are refused in Production.
+
+In Development the API also runs background jobs itself (`Jobs:ProcessInThisHost`), so the
+worker is optional. To run them the production way, start the API with
+`Jobs__ProcessInThisHost=false` and run the worker; any number of workers can share the queue.
 
 Ask the fixture a question (bash, with `jq`):
 
@@ -84,6 +90,9 @@ curl -s localhost:5120/api/v1/investigations -H 'Content-Type: application/json'
   --argjson r "$repo" '{repositoryId: $r.id, snapshotId: $r.latestSnapshot.id, type: "question",
   question: "Which requests are let through without an API key?"}')" | jq
 ```
+
+The response is `202` with a queued investigation; fetch `/api/v1/investigations/<investigationId>`
+until its `state` is `completed`.
 
 The answer comes from the extractive fake model: it lists matching passages as evidence and
 says so; it is not a model-written explanation.

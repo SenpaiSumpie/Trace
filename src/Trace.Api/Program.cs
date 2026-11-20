@@ -15,6 +15,11 @@ builder.Services.AddProblemDetails();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 
 builder.Services.AddTraceInfrastructure();
+if (InfrastructureServiceCollectionExtensions.ShouldProcessJobsInThisHost(builder.Configuration))
+{
+    builder.Services.AddTraceJobProcessing();
+}
+
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<TraceDbContext>("database", tags: [ReadyTag]);
 

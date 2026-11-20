@@ -18,6 +18,7 @@ public enum InvestigationEventType
 
     Completed,
     Failed,
+    Cancelled,
 }
 
 /// <summary>

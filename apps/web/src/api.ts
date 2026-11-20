@@ -35,6 +35,7 @@ export interface InvestigationResult {
 
 export interface Investigation {
   investigationId: string
+  jobId: string | null
   repositoryId: string
   snapshotId: string
   commitSha: string
@@ -114,4 +115,17 @@ export function askQuestion(input: {
 
 export function listEvents(investigationId: string): Promise<InvestigationEvent[]> {
   return request<InvestigationEvent[]>(`/api/v1/investigations/${investigationId}/events`)
+}
+
+export function getInvestigation(investigationId: string): Promise<Investigation> {
+  return request<Investigation>(`/api/v1/investigations/${investigationId}`)
+}
+
+/** Asks for the investigation's background job to be cancelled. */
+export function cancelJob(jobId: string): Promise<unknown> {
+  return request<unknown>(`/api/v1/jobs/${jobId}/cancel`, { method: 'POST' })
+}
+
+export function isFinished(investigation: Investigation): boolean {
+  return investigation.state === 'completed' || investigation.state === 'failed' || investigation.state === 'cancelled'
 }

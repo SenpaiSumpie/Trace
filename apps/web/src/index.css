@@ -108,6 +108,17 @@ button {
   cursor: pointer;
 }
 
+button.secondary {
+  color: var(--paper);
+  background: transparent;
+  border-color: var(--rule);
+  font-weight: 500;
+}
+
+.working {
+  margin-top: 2rem;
+}
+
 button:disabled {
   color: var(--muted);
   background: transparent;

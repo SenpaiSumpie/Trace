@@ -77,9 +77,17 @@ public sealed class Investigation : Entity
         };
     }
 
+    /// <summary>
+    /// Begins, or after an interrupted attempt resumes, the investigation. Resuming is allowed
+    /// because a worker can die mid-run and the job is then retried from the start.
+    /// </summary>
     public void Start(string modelId, string promptVersion)
     {
-        Require(InvestigationState.Queued);
+        if (State is not (InvestigationState.Queued or InvestigationState.Running))
+        {
+            throw new InvalidOperationException($"Investigation is {State}; it cannot be started.");
+        }
+
         ModelId = Guard.Required(modelId, MaxVersionLength, nameof(modelId));
         PromptVersion = Guard.Required(promptVersion, MaxVersionLength, nameof(promptVersion));
         State = InvestigationState.Running;
@@ -95,15 +103,26 @@ public sealed class Investigation : Entity
 
     public void Fail(string errorCode)
     {
-        Require(InvestigationState.Running);
+        RequireUnfinished();
         ErrorCode = Guard.Required(errorCode, MaxErrorCodeLength, nameof(errorCode));
         State = InvestigationState.Failed;
     }
 
     public void Cancel()
     {
-        Require(InvestigationState.Running);
+        RequireUnfinished();
         State = InvestigationState.Cancelled;
+    }
+
+    public bool IsFinished =>
+        State is InvestigationState.Completed or InvestigationState.Failed or InvestigationState.Cancelled;
+
+    private void RequireUnfinished()
+    {
+        if (IsFinished)
+        {
+            throw new InvalidOperationException($"Investigation is already {State}.");
+        }
     }
 
     private void Require(InvestigationState expected)

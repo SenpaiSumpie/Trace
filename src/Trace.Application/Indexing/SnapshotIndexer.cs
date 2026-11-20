@@ -27,7 +27,8 @@ public sealed class SnapshotIndexer(ISnapshotStore store, IEmbeddingProvider emb
     public async Task<IndexResult> IndexAsync(
         Guid repositoryId,
         IRepositorySource source,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Guid? jobId = null)
     {
         ArgumentNullException.ThrowIfNull(source);
 
@@ -40,7 +41,7 @@ public sealed class SnapshotIndexer(ISnapshotStore store, IEmbeddingProvider emb
         }
 
         var snapshot = IndexSnapshot.Start(
-            repositoryId, revision.CommitSha, revision.Branch, LineChunker.Version, embeddings.ModelId);
+            repositoryId, revision.CommitSha, revision.Branch, LineChunker.Version, embeddings.ModelId, jobId);
         if (!await store.TryAddAsync(snapshot, cancellationToken))
         {
             existing = await FindActiveAsync(repositoryId, revision, cancellationToken)

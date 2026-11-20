@@ -37,7 +37,9 @@ public sealed class QuestionInvestigator(
     IInvestigationStore store,
     SourceTools tools,
     CitationValidator citationValidator,
-    IChatModel model)
+    IChatModel model,
+    TimeProvider timeProvider,
+    Jobs.IJobSignal jobSignal)
 {
     public const int MaxModelTurns = 6;
     public const int MaxToolCalls = 8;
@@ -59,7 +61,11 @@ public sealed class QuestionInvestigator(
 
     private static readonly JsonSerializerOptions ToolResultJson = new(JsonSerializerDefaults.Web);
 
-    public async Task<InvestigationRecord> AskAsync(AskQuestion command, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Validates the request and stores a queued investigation together with the job that will
+    /// run it, in one transaction. Nothing is investigated here.
+    /// </summary>
+    public async Task<InvestigationRecord> CreateAsync(AskQuestion command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
@@ -80,7 +86,14 @@ public sealed class QuestionInvestigator(
 
         var investigation = Investigation.Create(
             snapshot, InvestigationType.Question, command.Question, command.IdempotencyKey);
-        if (!await store.TryAddAsync(investigation, cancellationToken))
+        var job = Job.Enqueue(
+            InvestigationJobHandler.JobKind,
+            Job.RepositoryScope(investigation.RepositoryId),
+            dedupeKey: investigation.Id.ToString(),
+            InvestigationJobHandler.Payload(investigation.Id),
+            timeProvider.GetUtcNow());
+
+        if (!await store.TryAddAsync(investigation, job, cancellationToken))
         {
             var winner = await store.FindByIdempotencyKeyAsync(
                 command.RepositoryId, command.IdempotencyKey!, cancellationToken)
@@ -88,16 +101,49 @@ public sealed class QuestionInvestigator(
             return await ReplayAsync(winner, command, cancellationToken);
         }
 
-        var run = new Run(investigation, snapshot.CommitSha);
+        jobSignal.Notify();
+
+        return await store.GetAsync(investigation.Id, cancellationToken)
+            ?? throw new InvalidOperationException("The investigation could not be read back.");
+    }
+
+    /// <summary>
+    /// Runs a stored investigation to a final state. Safe to call again after an interrupted
+    /// attempt: a finished investigation is left alone, an unfinished one starts over (evidence
+    /// is only ever stored on completion, so nothing is duplicated).
+    /// <para>
+    /// Cancellation and unexpected errors are rethrown for the job queue to decide (cancel,
+    /// retry or give up); <see cref="AbandonAsync"/> then records the final state.
+    /// </para>
+    /// </summary>
+    public async Task RunAsync(Guid investigationId, int attempt, int maxAttempts, CancellationToken cancellationToken)
+    {
+        var investigation = await store.FindForUpdateAsync(investigationId, cancellationToken);
+        if (investigation is null || investigation.IsFinished)
+        {
+            return;
+        }
+
+        var snapshot = await snapshots.FindSnapshotAsync(
+            investigation.RepositoryId, investigation.SnapshotId, cancellationToken)
+            ?? throw new InvalidOperationException("The investigation's snapshot no longer exists.");
+
+        var run = new Run(investigation, snapshot.CommitSha)
+        {
+            EventSeq = await store.GetLastEventSeqAsync(investigation.Id, cancellationToken),
+        };
         investigation.Start(model.ModelId, QuestionPrompt.Version);
         await store.SaveAsync(investigation, [], cancellationToken);
         await EmitAsync(
             run, InvestigationEventType.Started,
-            $"Started investigating at commit {snapshot.CommitSha[..12]}.", cancellationToken: cancellationToken);
+            attempt <= 1
+                ? $"Started investigating at commit {snapshot.CommitSha[..12]}."
+                : $"Started again (attempt {attempt}) at commit {snapshot.CommitSha[..12]}.",
+            cancellationToken: cancellationToken);
 
         try
         {
-            var (result, evidence) = await InvestigateAsync(run, command.Question, cancellationToken);
+            var (result, evidence) = await InvestigateAsync(run, investigation.Question, cancellationToken);
 
             await EmitAsync(
                 run, InvestigationEventType.Completed,
@@ -108,32 +154,56 @@ public sealed class QuestionInvestigator(
             investigation.Complete(result.ToJson());
             await store.SaveAsync(investigation, evidence, cancellationToken);
         }
-        catch (OperationCanceledException)
-        {
-            if (investigation.State == InvestigationState.Running)
-            {
-                investigation.Cancel();
-                await store.SaveAsync(investigation, [], CancellationToken.None);
-            }
-
-            throw;
-        }
         catch (InvalidModelOutputException exception)
         {
+            // Asking again would cost another model run for an answer we already could not use.
             await FailAsync(run, "invalid_model_output", $"Failed: {exception.Message}");
         }
-        catch (ChatModelException)
+        catch (ChatModelException) when (attempt >= maxAttempts)
         {
             await FailAsync(run, "model_error", "Failed: the language model could not be reached.");
         }
-        catch (Exception)
+    }
+
+    /// <summary>
+    /// Records that an investigation's job ended without finishing it: cancelled on request, or
+    /// failed for good. Does nothing if the investigation already has a final state.
+    /// </summary>
+    public async Task AbandonAsync(
+        Guid investigationId,
+        bool cancelled,
+        string? jobErrorCode,
+        CancellationToken cancellationToken = default)
+    {
+        var investigation = await store.FindForUpdateAsync(investigationId, cancellationToken);
+        if (investigation is null || investigation.IsFinished)
         {
-            await FailAsync(run, "internal_error", "Failed unexpectedly.");
-            throw;
+            return;
         }
 
-        return await store.GetAsync(investigation.Id, CancellationToken.None)
-            ?? throw new InvalidOperationException("The investigation could not be read back.");
+        var run = new Run(investigation, commitSha: string.Empty)
+        {
+            EventSeq = await store.GetLastEventSeqAsync(investigation.Id, cancellationToken),
+        };
+
+        if (cancelled)
+        {
+            await EmitAsync(run, InvestigationEventType.Cancelled, "Cancelled on request.", cancellationToken: cancellationToken);
+            investigation.Cancel();
+        }
+        else
+        {
+            var (errorCode, summary) = jobErrorCode switch
+            {
+                Jobs.JobErrors.AttemptsExhausted => ("worker_interrupted", "Failed: the worker stopped repeatedly before finishing."),
+                Jobs.JobProcessor.TimeoutError => ("timed_out", "Failed: the investigation took too long."),
+                _ => ("internal_error", "Failed unexpectedly."),
+            };
+            await EmitAsync(run, InvestigationEventType.Failed, summary, cancellationToken: cancellationToken);
+            investigation.Fail(errorCode);
+        }
+
+        await store.SaveAsync(investigation, [], cancellationToken);
     }
 
     private async Task<IndexSnapshot> RequireSnapshotAsync(AskQuestion command, CancellationToken cancellationToken)
@@ -418,11 +488,6 @@ public sealed class QuestionInvestigator(
 
     private async Task FailAsync(Run run, string errorCode, string summary)
     {
-        if (run.Investigation.State != InvestigationState.Running)
-        {
-            return;
-        }
-
         await EmitAsync(run, InvestigationEventType.Failed, summary, cancellationToken: CancellationToken.None);
         run.Investigation.Fail(errorCode);
         await store.SaveAsync(run.Investigation, [], CancellationToken.None);

@@ -36,12 +36,19 @@ public sealed partial class IndexSnapshot : Entity
 
     public DateTimeOffset? CompletedAt { get; private set; }
 
+    /// <summary>
+    /// The background job building this snapshot, if any. Lets a later job tell a build that is
+    /// still in progress from one abandoned by a worker that died.
+    /// </summary>
+    public Guid? BuildingJobId { get; private set; }
+
     public static IndexSnapshot Start(
         Guid repositoryId,
         string commitSha,
         string branch,
         string parserVersion,
-        string embeddingModel)
+        string embeddingModel,
+        Guid? buildingJobId = null)
     {
         ArgumentNullException.ThrowIfNull(commitSha);
         if (!FullCommitSha().IsMatch(commitSha))
@@ -58,6 +65,7 @@ public sealed partial class IndexSnapshot : Entity
             ParserVersion = Guard.Required(parserVersion, MaxVersionLength, nameof(parserVersion)),
             EmbeddingModel = Guard.Required(embeddingModel, MaxVersionLength, nameof(embeddingModel)),
             Status = SnapshotStatus.Building,
+            BuildingJobId = buildingJobId,
         };
     }
 

@@ -22,7 +22,10 @@ public sealed class PostgresFixture : IAsyncLifetime
     public Task DisposeAsync() => container.DisposeAsync().AsTask();
 
     /// <summary>Creates an empty database so each test starts from a clean, isolated state.</summary>
-    public async Task<TestDatabase> CreateDatabaseAsync(bool migrate = true)
+    public async Task<TestDatabase> CreateDatabaseAsync(
+        bool migrate = true,
+        Action<IServiceCollection>? configureServices = null,
+        IReadOnlyDictionary<string, string?>? settings = null)
     {
         var name = $"test_{Guid.NewGuid():N}";
         await using (var connection = new NpgsqlConnection(container.GetConnectionString()))
@@ -37,7 +40,7 @@ public sealed class PostgresFixture : IAsyncLifetime
             Database = name,
         }.ConnectionString;
 
-        var database = new TestDatabase(connectionString);
+        var database = new TestDatabase(connectionString, configureServices, settings);
         if (migrate)
         {
             await using var db = database.CreateContext();
@@ -59,11 +62,15 @@ public sealed class TestDatabase : IAsyncDisposable
     private readonly ServiceProvider provider;
     private readonly AsyncServiceScope scope;
 
-    public TestDatabase(string connectionString)
+    public TestDatabase(
+        string connectionString,
+        Action<IServiceCollection>? configureServices = null,
+        IReadOnlyDictionary<string, string?>? settings = null)
     {
         ConnectionString = connectionString;
 
         var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(settings ?? new Dictionary<string, string?>())
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 [$"ConnectionStrings:{InfrastructureServiceCollectionExtensions.ConnectionStringName}"] = connectionString,
@@ -72,11 +79,18 @@ public sealed class TestDatabase : IAsyncDisposable
             })
             .Build();
 
-        provider = new ServiceCollection()
+        var services = new ServiceCollection()
             .AddSingleton<IConfiguration>(configuration)
-            .AddSingleton<IHostEnvironment>(new HostingEnvironment { EnvironmentName = Environments.Development })
-            .AddTraceInfrastructure()
-            .BuildServiceProvider();
+            .AddSingleton<IHostEnvironment>(new HostingEnvironment
+            {
+                EnvironmentName = Environments.Development,
+                ContentRootPath = AppContext.BaseDirectory,
+            })
+            .AddTraceInfrastructure();
+
+        // Registered last so a test can replace any application service (model, clock, options).
+        configureServices?.Invoke(services);
+        provider = services.BuildServiceProvider();
         scope = provider.CreateAsyncScope();
     }
 

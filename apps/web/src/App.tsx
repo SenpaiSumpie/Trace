@@ -1,8 +1,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { type FormEvent, useState } from 'react'
-import { askQuestion, listRepositories, type Repository } from './api.ts'
+import {
+  askQuestion,
+  cancelJob,
+  getInvestigation,
+  isFinished,
+  listRepositories,
+  type Repository,
+} from './api.ts'
 import { ApiStatus } from './ApiStatus.tsx'
-import { InvestigationView } from './InvestigationView.tsx'
+import { InvestigationView, POLL_INTERVAL_MS, Steps } from './InvestigationView.tsx'
 
 const MAX_QUESTION_LENGTH = 4000
 
@@ -10,17 +17,34 @@ export default function App() {
   const repositories = useQuery({ queryKey: ['repositories'], queryFn: listRepositories })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
+
+  // Asking only queues the investigation; a worker runs it. Poll until it reaches a final state.
   const ask = useMutation({ mutationFn: askQuestion })
+  const askedId = ask.data?.investigationId
+  const polled = useQuery({
+    queryKey: ['investigation', askedId],
+    queryFn: () => getInvestigation(askedId!),
+    enabled: askedId !== undefined,
+    initialData: ask.data,
+    staleTime: Infinity,
+    refetchInterval: (query) =>
+      query.state.data && !isFinished(query.state.data) ? POLL_INTERVAL_MS : false,
+  })
+  const cancel = useMutation({ mutationFn: cancelJob })
+
+  const investigation = ask.isPending ? undefined : polled.data
+  const working = ask.isPending || (investigation !== undefined && !isFinished(investigation))
 
   const indexed = (repositories.data ?? []).filter((repository) => repository.latestSnapshot !== null)
   const selected = indexed.find((repository) => repository.id === selectedId) ?? indexed[0]
-  const canAsk = selected !== undefined && question.trim().length > 0 && !ask.isPending
+  const canAsk = selected !== undefined && question.trim().length > 0 && !working
 
   function submit(event: FormEvent) {
     event.preventDefault()
     if (!canAsk || !selected.latestSnapshot) {
       return
     }
+    cancel.reset()
     ask.mutate({
       repositoryId: selected.id,
       snapshotId: selected.latestSnapshot.id,
@@ -58,7 +82,7 @@ export default function App() {
             id="repository"
             value={selected.id}
             onChange={(event) => setSelectedId(event.target.value)}
-            disabled={ask.isPending}
+            disabled={working}
           >
             {indexed.map((repository) => (
               <option key={repository.id} value={repository.id}>
@@ -75,7 +99,7 @@ export default function App() {
             placeholder="Why does the first page of the task list skip results?"
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
-            disabled={ask.isPending}
+            disabled={working}
           />
 
           <button type="submit" disabled={!canAsk}>
@@ -84,11 +108,32 @@ export default function App() {
         </form>
       )}
 
-      {ask.isPending && <p role="status">Looking through the code…</p>}
-
       {ask.isError && <p role="alert">The question could not be asked. {ask.error.message}</p>}
 
-      {ask.data && !ask.isPending && <InvestigationView investigation={ask.data} />}
+      {working && (
+        <section className="working" aria-label="Investigation in progress">
+          <p role="status">
+            {investigation?.state === 'running' ? 'Looking through the code…' : 'Waiting for a worker…'}
+          </p>
+          {investigation?.jobId && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={cancel.isPending || cancel.isSuccess}
+              onClick={() => cancel.mutate(investigation.jobId!)}
+            >
+              {cancel.isSuccess ? 'Cancelling…' : 'Cancel'}
+            </button>
+          )}
+          {cancel.isError && <p role="alert">The investigation could not be cancelled. {cancel.error.message}</p>}
+          {polled.isError && (
+            <p role="alert">Lost contact with the API. The investigation continues in the background.</p>
+          )}
+          {investigation && <Steps investigationId={investigation.investigationId} live />}
+        </section>
+      )}
+
+      {investigation && !working && <InvestigationView investigation={investigation} />}
 
       <footer>
         <ApiStatus />

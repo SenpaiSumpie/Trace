@@ -14,12 +14,16 @@ internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationSt
         db.Investigations.AsNoTracking().SingleOrDefaultAsync(
             i => i.RepositoryId == repositoryId && i.IdempotencyKey == idempotencyKey, cancellationToken);
 
-    public async Task<bool> TryAddAsync(Investigation investigation, CancellationToken cancellationToken = default)
+    public async Task<bool> TryAddAsync(Investigation investigation, Job job, CancellationToken cancellationToken = default)
     {
+        // One SaveChanges is one transaction: an investigation never exists without its job.
         db.Investigations.Add(investigation);
+        db.Jobs.Add(job);
         try
         {
             await db.SaveChangesAsync(cancellationToken);
+            db.Entry(job).State = EntityState.Detached;
+            db.Entry(investigation).State = EntityState.Detached;
             return true;
         }
         catch (DbUpdateException exception) when (exception.InnerException is PostgresException
@@ -29,9 +33,18 @@ internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationSt
         })
         {
             db.Entry(investigation).State = EntityState.Detached;
+            db.Entry(job).State = EntityState.Detached;
             return false;
         }
     }
+
+    public Task<Investigation?> FindForUpdateAsync(Guid investigationId, CancellationToken cancellationToken = default) =>
+        db.Investigations.SingleOrDefaultAsync(i => i.Id == investigationId, cancellationToken);
+
+    public async Task<int> GetLastEventSeqAsync(Guid investigationId, CancellationToken cancellationToken = default) =>
+        await db.InvestigationEvents
+            .Where(e => e.InvestigationId == investigationId)
+            .MaxAsync(e => (int?)e.Seq, cancellationToken) ?? 0;
 
     public Task AppendEventAsync(InvestigationEvent investigationEvent, CancellationToken cancellationToken = default)
     {
@@ -67,7 +80,13 @@ internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationSt
             .OrderBy(e => e.Seq)
             .ToListAsync(cancellationToken);
 
-        return new InvestigationRecord(found.investigation, found.CommitSha, events);
+        var dedupeKey = investigationId.ToString();
+        var jobId = await db.Jobs
+            .Where(j => j.Kind == InvestigationJobHandler.JobKind && j.DedupeKey == dedupeKey)
+            .Select(j => (Guid?)j.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return new InvestigationRecord(found.investigation, found.CommitSha, events, jobId);
     }
 }
 

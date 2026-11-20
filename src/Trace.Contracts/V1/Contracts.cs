@@ -36,11 +36,13 @@ public sealed record InvestigationResultResponse(
     IReadOnlyList<string> Unknowns,
     IReadOnlyList<string> Limitations);
 
-/// <param name="State"><c>queued</c>, <c>running</c>, <c>completed</c>, <c>failed</c> or <c>cancelled</c>.</param>
+/// <param name="State"><c>queued</c>, <c>running</c>, <c>completed</c>, <c>failed</c> or <c>cancelled</c>. Poll until it is one of the last three.</param>
+/// <param name="JobId">The background job running the investigation; use it to cancel.</param>
 /// <param name="Result">Present only when <paramref name="State"/> is <c>completed</c>.</param>
 /// <param name="ErrorCode">Present only when <paramref name="State"/> is <c>failed</c>.</param>
 public sealed record InvestigationResponse(
     Guid InvestigationId,
+    Guid? JobId,
     Guid RepositoryId,
     Guid SnapshotId,
     string CommitSha,
@@ -60,3 +62,17 @@ public sealed record InvestigationEventResponse(
     string? ToolName,
     string Summary,
     DateTimeOffset OccurredAt);
+
+/// <param name="Kind"><c>investigation.run</c> or <c>repository.index</c>.</param>
+/// <param name="Status"><c>queued</c>, <c>running</c>, <c>succeeded</c>, <c>failed</c> or <c>cancelled</c>.</param>
+/// <param name="ErrorCode">Why the job failed, or the reason for its most recent retry.</param>
+public sealed record JobResponse(
+    Guid Id,
+    string Kind,
+    string Status,
+    int Attempts,
+    int MaxAttempts,
+    bool CancelRequested,
+    string? ErrorCode,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Trace.Application.Investigations;
+using Trace.Application.Jobs;
 using Trace.Contracts.V1;
 using Trace.Domain;
 
@@ -21,6 +22,9 @@ internal static class V1Endpoints
         v1.MapPost("/investigations", CreateInvestigationAsync);
         v1.MapGet("/investigations/{id:guid}", GetInvestigationAsync).WithName(nameof(GetInvestigationAsync));
         v1.MapGet("/investigations/{id:guid}/events", GetInvestigationEventsAsync);
+        v1.MapPost("/repositories/{id:guid}/index-jobs", CreateIndexJobAsync);
+        v1.MapGet("/jobs/{id:guid}", GetJobAsync).WithName(nameof(GetJobAsync));
+        v1.MapPost("/jobs/{id:guid}/cancel", CancelJobAsync);
     }
 
     private static async Task<IResult> ListRepositoriesAsync(
@@ -51,11 +55,12 @@ internal static class V1Endpoints
 
         try
         {
-            var record = await investigator.AskAsync(
+            // Only queues the work: the response is 202 and the client polls the investigation.
+            var record = await investigator.CreateAsync(
                 new AskQuestion(request.RepositoryId, request.SnapshotId, request.Question!.Trim(), request.IdempotencyKey),
                 cancellationToken);
 
-            return TypedResults.CreatedAtRoute(
+            return TypedResults.AcceptedAtRoute(
                 ToResponse(record), nameof(GetInvestigationAsync), new { id = record.Investigation.Id });
         }
         catch (InvestigationRequestException exception)
@@ -87,6 +92,60 @@ internal static class V1Endpoints
             ? TypedResults.Ok(record.Events.Select(e => new InvestigationEventResponse(
                 e.Seq, Snake(e.EventType), e.ToolName, e.Summary, e.CreatedAt)))
             : TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
+
+    private static async Task<IResult> CreateIndexJobAsync(
+        Guid id,
+        HttpRequest request,
+        JobService jobs,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = request.Headers["Idempotency-Key"].ToString();
+        if (idempotencyKey.Length > Investigation.MaxIdempotencyKeyLength)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["Idempotency-Key"] = [$"Idempotency-Key must be at most {Investigation.MaxIdempotencyKeyLength} characters."],
+            });
+        }
+
+        try
+        {
+            var job = await jobs.EnqueueIndexAsync(
+                id, idempotencyKey.Length == 0 ? null : idempotencyKey, cancellationToken);
+            return TypedResults.AcceptedAtRoute(ToResponse(job), nameof(GetJobAsync), new { id = job.Id });
+        }
+        catch (JobRequestException exception)
+        {
+            return TypedResults.Problem(
+                detail: exception.Message,
+                statusCode: exception.Error == JobRequestError.RepositoryNotFound
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status409Conflict);
+        }
+    }
+
+    private static async Task<IResult> GetJobAsync(Guid id, JobService jobs, CancellationToken cancellationToken) =>
+        await jobs.FindAsync(id, cancellationToken) is { } job
+            ? TypedResults.Ok(ToResponse(job))
+            : TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
+
+    /// <summary>Asks for cancellation. Idempotent: cancelling a finished job returns it unchanged.</summary>
+    private static async Task<IResult> CancelJobAsync(Guid id, JobService jobs, CancellationToken cancellationToken) =>
+        await jobs.CancelAsync(id, cancellationToken) is { } job
+            ? TypedResults.Accepted((string?)null, ToResponse(job))
+            : TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
+
+    private static JobResponse ToResponse(Job job) =>
+        new(
+            job.Id,
+            job.Kind,
+            Snake(job.Status),
+            job.Attempts,
+            job.MaxAttempts,
+            job.RequestedCancelAt is not null,
+            job.ErrorCode,
+            job.CreatedAt,
+            job.UpdatedAt);
 
     private static Dictionary<string, string[]> Validate(CreateInvestigationRequest request)
     {
@@ -128,6 +187,7 @@ internal static class V1Endpoints
 
         return new InvestigationResponse(
             investigation.Id,
+            record.JobId,
             investigation.RepositoryId,
             investigation.SnapshotId,
             record.CommitSha,
