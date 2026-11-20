@@ -6,4 +6,8 @@
     <ProjectReference Include="..\Trace.Infrastructure\Trace.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
+  </ItemGroup>
+
 </Project>

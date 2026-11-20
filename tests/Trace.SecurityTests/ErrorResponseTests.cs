@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace Trace.SecurityTests;
@@ -17,9 +16,7 @@ public class ErrorResponseTests(WebApplicationFactory<Program> factory)
     [InlineData("Production")]
     public async Task Unknown_route_returns_problem_details_without_internals(string environment)
     {
-        using var client = factory
-            .WithWebHostBuilder(builder => builder.UseEnvironment(environment))
-            .CreateClient();
+        using var client = factory.WithEnvironment(environment).CreateClient();
 
         using var response = await client.GetAsync("/api/v1/does-not-exist");
         var body = await response.Content.ReadAsStringAsync();
@@ -33,14 +30,20 @@ public class ErrorResponseTests(WebApplicationFactory<Program> factory)
         Assert.DoesNotContain("   at ", body, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task Health_endpoint_discloses_only_the_aggregate_status()
+    [Theory]
+    [InlineData("/health")]
+    [InlineData("/health/ready")]
+    public async Task Health_endpoints_disclose_only_the_aggregate_status(string path)
     {
-        using var client = factory.CreateClient();
+        const string connectionString = "Host=127.0.0.1;Port=1;Database=trace;Username=trace;Password=s3cret-value;Timeout=1";
+        using var client = factory
+            .WithEnvironment("Development", ("ConnectionStrings:Trace", connectionString))
+            .CreateClient();
 
-        using var response = await client.GetAsync("/health");
+        using var response = await client.GetAsync(path);
+        var body = await response.Content.ReadAsStringAsync();
 
         Assert.Equal("text/plain", response.Content.Headers.ContentType?.MediaType);
-        Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
+        Assert.Contains(body, new[] { "Healthy", "Unhealthy" });
     }
 }

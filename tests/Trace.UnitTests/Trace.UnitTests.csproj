@@ -15,4 +15,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Trace.Domain\Trace.Domain.csproj" />
+  </ItemGroup>
+
 </Project>
