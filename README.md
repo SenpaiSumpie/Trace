@@ -9,7 +9,7 @@ line range. The full specification is in
 
 ## Status
 
-**Schema and a deterministic fixture indexer; no retrieval or Q&A yet.** What exists today:
+**Indexing and retrieval over a fixture repository; no Q&A, API or UI for it yet.** What exists today:
 
 - .NET solution with the modular-monolith project layout ([ADR-001](docs/adr/ADR-001-modular-monolith-and-worker.md)).
 - Domain model and PostgreSQL schema for repositories, index snapshots, source chunks,
@@ -21,16 +21,22 @@ line range. The full specification is in
   deliberate defects) that is indexed on startup in Development.
 - Embedding provider interface with one implementation: a deterministic fake (hashed bag of
   words) for tests and local demos. It has no semantic understanding and is refused in Production.
+- Hybrid retrieval inside PostgreSQL: full-text search plus exact vector search, fused by
+  reciprocal rank ([ADR-003](docs/adr/ADR-003-postgres-pgvector-hybrid-search.md)), exposed as two
+  bounded read-only tools, `search_code` and `read_file_range`.
+- Server-side citation validation: a claimed path and line range is accepted only if it
+  resolves inside the pinned snapshot.
 - API with `GET /health` (liveness) and `GET /health/ready` (database) endpoints and
   ProblemDetails error responses. No product endpoints yet.
 - Worker host (no jobs yet).
 - React + TypeScript web shell that displays API health.
 - Unit, integration and security tests; CI for build, lint, format and tests.
 
-Not implemented: a real embedding provider, retrieval, investigations, authentication, GitHub
-integration, secret scanning. Nothing queries the index yet.
+Not implemented: a real embedding provider, investigations (Q&A), authentication, GitHub
+integration, secret scanning. Retrieval is reachable only from tests; no endpoint calls it yet.
+Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-Next task: hybrid retrieval and citations (handoff Section 15, Task 4).
+Next task: grounded question workflow (handoff Section 15, Task 5).
 
 ## Prerequisites
 

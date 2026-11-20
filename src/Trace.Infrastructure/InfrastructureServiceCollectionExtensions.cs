@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Trace.Application.Indexing;
+using Trace.Application.Retrieval;
 using Trace.Infrastructure.Embeddings;
 using Trace.Infrastructure.Persistence;
 
@@ -35,6 +36,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton(CreateEmbeddingProvider);
         services.AddScoped<ISnapshotStore, EfSnapshotStore>();
         services.AddScoped<SnapshotIndexer>();
+        services.AddScoped<ISnapshotReader, EfSnapshotReader>();
+        services.AddScoped<SourceTools>();
+        services.AddScoped<CitationValidator>();
 
         return services;
     }

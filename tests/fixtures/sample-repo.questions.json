@@ -1,0 +1,73 @@
+{
+  "datasetVersion": "1",
+  "description": "Labeled retrieval questions for tests/fixtures/sample-repo. Each question lists the source ranges a correct answer must be grounded in. Kept outside the fixture directory so the labels are never indexed. 'dev' questions may be used while tuning retrieval; 'test' questions must not be.",
+  "fixtureRevision": "ee02b2da366aa000b30541463014b895d5cebb67",
+  "questions": [
+    {
+      "id": "pagination-offset",
+      "split": "dev",
+      "question": "Why does the first page of the task list skip the first results?",
+      "expected": [{ "path": "src/TaskBoard.Api/Tasks/TaskRepository.cs", "startLine": 20, "endLine": 29 }]
+    },
+    {
+      "id": "max-page-size-constant",
+      "split": "dev",
+      "question": "Where is the maximum page size defined in code?",
+      "expected": [{ "path": "src/TaskBoard.Api/Tasks/PageRequest.cs", "startLine": 8, "endLine": 9 }]
+    },
+    {
+      "id": "page-size-rationale",
+      "split": "dev",
+      "question": "Why is the page size capped at 100 instead of being clamped?",
+      "expected": [{ "path": "docs/adr/0001-page-size-cap.md", "startLine": 8, "endLine": 13 }]
+    },
+    {
+      "id": "unauthenticated-paths",
+      "split": "dev",
+      "question": "Which requests are let through without an API key?",
+      "expected": [{ "path": "src/TaskBoard.Api/Auth/ApiKeyMiddleware.cs", "startLine": 11, "endLine": 16 }]
+    },
+    {
+      "id": "report-generation",
+      "split": "dev",
+      "question": "How are queued reports turned into summaries in the background?",
+      "expected": [{ "path": "src/TaskBoard.Api/Reports/ReportWorker.cs", "startLine": 12, "endLine": 35 }]
+    },
+    {
+      "id": "report-queue-thread-safety",
+      "split": "test",
+      "question": "Is the report queue safe to use from several threads at once?",
+      "expected": [{ "path": "src/TaskBoard.Api/Reports/ReportQueue.cs", "startLine": 4, "endLine": 17 }]
+    },
+    {
+      "id": "configured-page-size",
+      "split": "test",
+      "question": "What maximum page size does the configuration file set?",
+      "expected": [{ "path": "src/TaskBoard.Api/appsettings.json", "startLine": 7, "endLine": 9 }]
+    },
+    {
+      "id": "client-api-key",
+      "split": "test",
+      "question": "How does the web client attach the API key to its requests?",
+      "expected": [{ "path": "web/src/api.ts", "startLine": 15, "endLine": 26 }]
+    },
+    {
+      "id": "page-request-tests",
+      "split": "test",
+      "question": "Which unit tests check that out of range page requests are rejected?",
+      "expected": [{ "path": "tests/TaskBoard.Tests/PageRequestTests.cs", "startLine": 18, "endLine": 26 }]
+    },
+    {
+      "id": "last-page-ui",
+      "split": "test",
+      "question": "How does the task list component work out the number of the last page?",
+      "expected": [{ "path": "web/src/TaskList.tsx", "startLine": 38, "endLine": 38 }]
+    },
+    {
+      "id": "shutdown-cancellation",
+      "split": "test",
+      "question": "Does report rendering stop when the service is shutting down?",
+      "expected": [{ "path": "src/TaskBoard.Api/Reports/ReportWorker.cs", "startLine": 26, "endLine": 35 }]
+    }
+  ]
+}

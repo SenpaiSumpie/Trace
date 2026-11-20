@@ -39,6 +39,23 @@ public class MigrationTests(PostgresFixture postgres)
         Assert.Equal(6, await CountApplicationTablesAsync(db));
     }
 
+    [Fact]
+    public async Task Full_text_search_migration_backfills_chunks_of_already_completed_snapshots()
+    {
+        await using var database = await postgres.CreateDatabaseAsync(migrate: false);
+        await using var db = database.CreateContext();
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("ChunkEmbeddings");
+        var (_, chunk) = await TestGraph.AddCompletedSnapshotAsync(db, await TestGraph.AddRepositoryAsync(db));
+
+        await migrator.MigrateAsync();
+
+        var searchable = await db.Database
+            .SqlQuery<bool>($"SELECT search_vector @@ plainto_tsquery('english', 'line') AS \"Value\" FROM source_chunks WHERE id = {chunk.Id}")
+            .SingleAsync();
+        Assert.True(searchable);
+    }
+
     private static Task<int> CountApplicationTablesAsync(TraceDbContext db) => db.Database
         .SqlQuery<int>($"""
             SELECT count(*)::int AS "Value" FROM information_schema.tables

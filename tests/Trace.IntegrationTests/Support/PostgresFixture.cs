@@ -104,6 +104,9 @@ public sealed class TestDatabase : IAsyncDisposable
         return await indexer.IndexAsync(repositoryId, source);
     }
 
+    /// <summary>A scope for resolving application services, as one request or job would get.</summary>
+    public AsyncServiceScope CreateScope() => provider.CreateAsyncScope();
+
     public async ValueTask DisposeAsync()
     {
         await scope.DisposeAsync();
