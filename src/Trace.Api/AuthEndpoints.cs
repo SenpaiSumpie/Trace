@@ -3,9 +3,11 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Trace.Application.Access;
 using Trace.Contracts.V1;
 using Trace.Infrastructure.GitHub;
+using Trace.Infrastructure.Persistence;
 
 namespace Trace.Api;
 
@@ -34,6 +36,9 @@ internal static class AuthEndpoints
 
     public static void AddTraceAuthentication(this WebApplicationBuilder builder)
     {
+        builder.Services.AddDataProtection()
+            .SetApplicationName("trace")
+            .PersistKeysToDbContext<TraceDbContext>();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
         builder.Services

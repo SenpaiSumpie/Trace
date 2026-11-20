@@ -76,3 +76,13 @@ jobs:
         working-directory: apps/web
       - run: npm run test:e2e
         working-directory: apps/web
+
+  deployment-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The production images must build, and the Azure template must compile.
+      - run: docker build -f src/Trace.Api/Dockerfile -t trace-api .
+      - run: docker build -f src/Trace.Worker/Dockerfile -t trace-worker .
+      - run: docker build -f apps/web/Dockerfile -t trace-web .
+      - run: az bicep build --file infra/azure/main.bicep --stdout > /dev/null

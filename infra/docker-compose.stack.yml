@@ -1,0 +1,66 @@
+# The whole stack from the production images, for checking them locally:
+#   docker compose --env-file .env -f infra/docker-compose.stack.yml up --build
+# then open http://localhost:8080
+#
+# It runs in the "Staging" environment with the deterministic fake models and the demo
+# repository, so it needs no API keys. It is not a production configuration.
+name: trace-stack
+
+x-app-environment: &app-environment
+  DOTNET_ENVIRONMENT: Staging
+  ASPNETCORE_ENVIRONMENT: Staging
+  ConnectionStrings__Trace: Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+  Embeddings__Provider: deterministic-fake
+  Chat__Provider: deterministic-fake
+  Demo__FixturePath: /fixtures/sample-repo
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Applies database migrations once, then exits; the API and worker wait for it.
+  migrate:
+    build: { context: .., dockerfile: src/Trace.Api/Dockerfile }
+    command: ["--migrate"]
+    environment: *app-environment
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: { context: .., dockerfile: src/Trace.Api/Dockerfile }
+    environment:
+      <<: *app-environment
+      Database__SeedDemoData: "true"
+      Auth__AllowAnonymousWrites: "true"
+      Proxy__TrustForwardedHeaders: "true"
+    volumes:
+      - ../tests/fixtures/sample-repo:/fixtures/sample-repo:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    build: { context: .., dockerfile: src/Trace.Worker/Dockerfile }
+    environment: *app-environment
+    volumes:
+      - ../tests/fixtures/sample-repo:/fixtures/sample-repo:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    build: { context: .., dockerfile: apps/web/Dockerfile }
+    environment:
+      API_UPSTREAM: http://api:8080
+    ports:
+      # Loopback only.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - api

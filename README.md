@@ -38,6 +38,9 @@ line range. The full specification is in
   delete data, and files that look like they contain credentials are never indexed
   ([ADR-002](docs/adr/ADR-002-github-app-auth-and-authorization.md)). **Not yet tried against the
   real GitHub: the app has to be registered first** ([setup](docs/github-app-setup.md)).
+- Deployment artifacts: production images for web, API and worker, a compose file that runs the
+  whole stack from them, and an Azure template (Container Apps + PostgreSQL). **Nothing has been
+  deployed**; see [docs/deployment.md](docs/deployment.md).
 - Spending guards: a per-client rate limit on requests that start work, a token limit per
   investigation and a shared daily token budget, all failing closed.
 - HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
@@ -52,9 +55,10 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, deployment, a UI for indexing your own repositories. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+Not implemented: issue-to-plan, a UI for indexing your own repositories, OpenTelemetry, a
+deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-The six tasks of the first sprint (handoff Section 15) are done. Durable jobs, model providers and GitHub sign-in are done too. Remaining P0 follow-up: deployment.
+The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
 
 ## Prerequisites
 

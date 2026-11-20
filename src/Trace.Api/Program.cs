@@ -1,5 +1,7 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.EntityFrameworkCore;
 using Trace.Api;
 using Trace.Infrastructure;
 using Trace.Infrastructure.Persistence;
@@ -40,7 +42,34 @@ if (InfrastructureServiceCollectionExtensions.ShouldProcessJobsInThisHost(builde
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<TraceDbContext>("database", tags: [ReadyTag]);
 
+// Behind a reverse proxy that terminates TLS, the original scheme and client address arrive
+// in X-Forwarded-* headers. They are trusted only when this is switched on, which must only
+// be done when the API is not reachable except through that proxy.
+if (builder.Configuration.GetValue("Proxy:TrustForwardedHeaders", false))
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 var app = builder.Build();
+
+// "--migrate": apply pending database migrations and exit. Run once per release, before the
+// new version starts serving, instead of migrating from every instance at startup.
+if (args.Contains("--migrate"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<TraceDbContext>().Database.MigrateAsync();
+    return;
+}
+
+if (app.Configuration.GetValue("Proxy:TrustForwardedHeaders", false))
+{
+    app.UseForwardedHeaders();
+}
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();

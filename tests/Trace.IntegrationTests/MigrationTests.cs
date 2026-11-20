@@ -17,7 +17,7 @@ public class MigrationTests(PostgresFixture postgres)
 
         Assert.Empty(await db.Database.GetPendingMigrationsAsync());
         Assert.False(db.Database.HasPendingModelChanges());
-        Assert.Equal(10, await CountApplicationTablesAsync(db));
+        Assert.Equal(11, await CountApplicationTablesAsync(db));
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class MigrationTests(PostgresFixture postgres)
 
         await migrator.MigrateAsync();
 
-        Assert.Equal(10, await CountApplicationTablesAsync(db));
+        Assert.Equal(11, await CountApplicationTablesAsync(db));
     }
 
     [Fact]
