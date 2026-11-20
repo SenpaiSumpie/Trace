@@ -12,6 +12,8 @@ namespace Trace.Api;
 /// </summary>
 internal static class V1Endpoints
 {
+    public const string WriteRateLimit = "writes";
+
     private const string QuestionType = "question";
 
     public static void MapV1Endpoints(this IEndpointRouteBuilder app)
@@ -19,10 +21,10 @@ internal static class V1Endpoints
         var v1 = app.MapGroup("/api/v1");
 
         v1.MapGet("/repositories", ListRepositoriesAsync);
-        v1.MapPost("/investigations", CreateInvestigationAsync);
+        v1.MapPost("/investigations", CreateInvestigationAsync).RequireRateLimiting(WriteRateLimit);
         v1.MapGet("/investigations/{id:guid}", GetInvestigationAsync).WithName(nameof(GetInvestigationAsync));
         v1.MapGet("/investigations/{id:guid}/events", GetInvestigationEventsAsync);
-        v1.MapPost("/repositories/{id:guid}/index-jobs", CreateIndexJobAsync);
+        v1.MapPost("/repositories/{id:guid}/index-jobs", CreateIndexJobAsync).RequireRateLimiting(WriteRateLimit);
         v1.MapGet("/jobs/{id:guid}", GetJobAsync).WithName(nameof(GetJobAsync));
         v1.MapPost("/jobs/{id:guid}/cancel", CancelJobAsync);
     }
@@ -208,7 +210,8 @@ internal static class V1Endpoints
                         evidence.Supports, evidence.Excerpt))],
                     result.Unknowns,
                     result.Limitations),
-            investigation.ErrorCode);
+            investigation.ErrorCode,
+            new UsageResponse(investigation.InputTokens, investigation.OutputTokens));
     }
 
     private static string Snake<TEnum>(TEnum value)

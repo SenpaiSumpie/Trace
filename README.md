@@ -19,8 +19,6 @@ line range. The full specification is in
   chunks, embeds them and publishes an immutable snapshot. Re-indexing unchanged content is a no-op.
 - A synthetic fixture repository (`tests/fixtures/sample-repo`, a small task service with
   deliberate defects) that is indexed on startup in Development.
-- Embedding provider interface with one implementation: a deterministic fake (hashed bag of
-  words) for tests and local demos. It has no semantic understanding and is refused in Production.
 - Hybrid retrieval inside PostgreSQL: full-text search plus exact vector search, fused by
   reciprocal rank ([ADR-003](docs/adr/ADR-003-postgres-pgvector-hybrid-search.md)), exposed as two
   bounded read-only tools, `search_code` and `read_file_range`.
@@ -31,9 +29,12 @@ line range. The full specification is in
   ungrounded answer is replaced by an insufficient-evidence result. Every step is stored as an
   event ([ADR-006](docs/adr/ADR-006-llm-provider-adapter-and-tool-contracts.md),
   [ADR-007](docs/adr/ADR-007-injection-and-untrusted-source-boundary.md)).
-- Chat model interface with one implementation: a deterministic **extractive fake** that points
-  at passages matching the question's words. It does not understand questions or code and is
-  refused in Production. No real language model is integrated.
+- Model providers behind two small interfaces: Anthropic Claude for answers and Voyage AI for
+  embeddings, plus deterministic fakes for tests and local use (refused in Production). The fakes
+  are what runs by default locally: the chat fake only points at passages matching the question's
+  words. **The real adapters have not yet been run against the live APIs.**
+- Spending guards: a per-client rate limit on requests that start work, a token limit per
+  investigation and a shared daily token budget, all failing closed.
 - HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
   investigation and its events, queue a re-index, read and cancel jobs; plus `GET /health` and
   `GET /health/ready`.
@@ -46,10 +47,9 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: real embedding or chat providers (so no model-written answers yet),
-authentication, GitHub integration, issue-to-plan, secret scanning, rate limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+Not implemented: authentication, GitHub integration, issue-to-plan, secret scanning, rate limiting. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
-The six tasks of the first sprint (handoff Section 15) are done. Durable jobs are done too. Remaining P0 follow-ups: real model providers, GitHub App and authentication, deployment.
+The six tasks of the first sprint (handoff Section 15) are done. Durable jobs and model providers are done too. Remaining P0 follow-ups: GitHub App and authentication, deployment.
 
 ## Prerequisites
 
@@ -99,6 +99,20 @@ says so; it is not a model-written explanation.
 
 The web dev server proxies `/api` and `/health` to the API (`TRACE_API_URL`, default
 `http://localhost:5120`).
+
+## Using the real models
+
+Set these for the API and the worker (environment variables shown; never commit keys):
+
+```sh
+export Chat__Provider=anthropic        ANTHROPIC_API_KEY=...   # optional: Chat__Model, Chat__Effort
+export Embeddings__Provider=voyage     VOYAGE_API_KEY=...
+```
+
+Snapshots record the embedding model they were built with, so after switching embedding
+provider, queue a re-index (`POST /api/v1/repositories/<id>/index-jobs`) before asking
+questions. With real providers, indexed source text is sent to Voyage and retrieved passages to
+Anthropic.
 
 ## Database migrations
 

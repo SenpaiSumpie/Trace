@@ -48,6 +48,7 @@ export interface Investigation {
   updatedAt: string
   result: InvestigationResult | null
   errorCode: string | null
+  usage?: { inputTokens: number; outputTokens: number }
 }
 
 export interface InvestigationEvent {

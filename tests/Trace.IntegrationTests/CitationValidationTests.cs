@@ -183,7 +183,7 @@ public class CitationValidationTests(IndexedSampleRepo indexed) : IClassFixture<
     {
         public string ModelId => "other-model-v1";
 
-        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, EmbeddingPurpose purpose, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<float[]>>([.. texts.Select(_ =>
             {
                 var vector = new float[SourceChunk.EmbeddingDimensions];

@@ -63,7 +63,7 @@ public sealed class SourceTools(ISnapshotReader reader, IEmbeddingProvider embed
                 "The snapshot was indexed with a different embedding model and must be re-indexed before it can be searched.");
         }
 
-        var queryEmbedding = (await embeddings.EmbedAsync([query], cancellationToken))[0];
+        var queryEmbedding = (await embeddings.EmbedAsync([query], EmbeddingPurpose.Query, cancellationToken))[0];
         var lexical = await reader.SearchLexicalAsync(snapshot.Id, query, CandidatesPerRetriever, cancellationToken);
         var vector = await reader.SearchVectorAsync(snapshot.Id, queryEmbedding, CandidatesPerRetriever, cancellationToken);
 

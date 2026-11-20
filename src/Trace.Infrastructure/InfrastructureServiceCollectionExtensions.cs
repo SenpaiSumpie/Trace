@@ -29,6 +29,7 @@ public static class InfrastructureServiceCollectionExtensions
     public static IServiceCollection AddTraceInfrastructure(this IServiceCollection services)
     {
         services.AddLogging();
+        services.AddHttpClient();
         services.TryAddSingleton(TimeProvider.System);
         services.AddDbContext<TraceDbContext>((provider, options) =>
         {
@@ -47,6 +48,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<CitationValidator>();
 
         services.AddSingleton(CreateChatModel);
+        services.TryAddSingleton(CreateChatLimits);
         services.AddScoped<IRepositoryCatalog, EfRepositoryCatalog>();
         services.AddScoped<IInvestigationStore, EfInvestigationStore>();
         services.AddScoped<QuestionInvestigator>();
@@ -118,48 +120,102 @@ public static class InfrastructureServiceCollectionExtensions
         }
     }
 
-    private static IEmbeddingProvider CreateEmbeddingProvider(IServiceProvider services) =>
-        CreateProvider<IEmbeddingProvider>(
-            services,
-            EmbeddingProviderKey,
-            DeterministicFakeEmbeddingProvider.ProviderName,
-            () => new DeterministicFakeEmbeddingProvider());
-
-    private static IChatModel CreateChatModel(IServiceProvider services) =>
-        CreateProvider<IChatModel>(
-            services,
-            ChatProviderKey,
-            DeterministicFakeChatModel.ProviderName,
-            () => new DeterministicFakeChatModel());
-
-    /// <summary>
-    /// Resolves an AI provider from configuration. There is no default: a deployment without a
-    /// configured provider fails loudly, and the deterministic fakes are refused in Production.
-    /// </summary>
-    private static TProvider CreateProvider<TProvider>(
-        IServiceProvider services,
-        string key,
-        string fakeName,
-        Func<TProvider> createFake)
+    private static IEmbeddingProvider CreateEmbeddingProvider(IServiceProvider services)
     {
-        var provider = services.GetRequiredService<IConfiguration>()[key];
-        if (string.IsNullOrEmpty(provider))
+        var configuration = services.GetRequiredService<IConfiguration>();
+        switch (RequireProvider(configuration, EmbeddingProviderKey))
         {
-            throw new InvalidOperationException($"'{key}' is not configured.");
-        }
+            case DeterministicFakeEmbeddingProvider.ProviderName:
+                RefuseFakeInProduction(services, EmbeddingProviderKey);
+                return new DeterministicFakeEmbeddingProvider();
 
-        if (provider != fakeName)
+            case VoyageEmbeddingProvider.ProviderName:
+                var options = new VoyageOptions();
+                options.Model = configuration["Embeddings:Model"] is { Length: > 0 } model ? model : options.Model;
+                return new VoyageEmbeddingProvider(
+                    services.GetRequiredService<IHttpClientFactory>().CreateClient(VoyageEmbeddingProvider.ProviderName),
+                    RequireSecret(configuration, "Embeddings:ApiKey", "VOYAGE_API_KEY"),
+                    options,
+                    services.GetRequiredService<TimeProvider>());
+
+            case var unknown:
+                throw new InvalidOperationException($"'{EmbeddingProviderKey}' has unknown value '{unknown}'.");
+        }
+    }
+
+    private static IChatModel CreateChatModel(IServiceProvider services)
+    {
+        var configuration = services.GetRequiredService<IConfiguration>();
+        switch (RequireProvider(configuration, ChatProviderKey))
         {
-            throw new InvalidOperationException($"'{key}' has unknown value '{provider}'.");
-        }
+            case DeterministicFakeChatModel.ProviderName:
+                RefuseFakeInProduction(services, ChatProviderKey);
+                return new DeterministicFakeChatModel();
 
+            case AnthropicChatModel.ProviderName:
+                var options = new AnthropicChatOptions();
+                options.Model = configuration["Chat:Model"] is { Length: > 0 } model ? model : options.Model;
+                if (configuration["Chat:Effort"] is { Length: > 0 } effort)
+                {
+                    options.Effort = Enum.TryParse<Anthropic.Models.Messages.Effort>(effort, ignoreCase: true, out var parsed)
+                        ? parsed
+                        : throw new InvalidOperationException($"'Chat:Effort' has unknown value '{effort}'.");
+                }
+
+                return new AnthropicChatModel(
+                    new Anthropic.AnthropicClient { ApiKey = RequireSecret(configuration, "Chat:ApiKey", "ANTHROPIC_API_KEY") },
+                    options);
+
+            case var unknown:
+                throw new InvalidOperationException($"'{ChatProviderKey}' has unknown value '{unknown}'.");
+        }
+    }
+
+    /// <summary>There is no default provider: a deployment without one fails loudly.</summary>
+    private static string RequireProvider(IConfiguration configuration, string key) =>
+        configuration[key] is { Length: > 0 } provider
+            ? provider
+            : throw new InvalidOperationException($"'{key}' is not configured.");
+
+    private static void RefuseFakeInProduction(IServiceProvider services, string key)
+    {
         if (services.GetRequiredService<IHostEnvironment>().IsProduction())
         {
-            throw new InvalidOperationException($"'{key}' must not be '{provider}' in the Production environment.");
+            throw new InvalidOperationException(
+                $"'{key}' must not be a deterministic fake in the Production environment.");
         }
-
-        return createFake();
     }
+
+    /// <summary>
+    /// Reads an API key from configuration (a secret store or user secrets) or the provider's
+    /// usual environment variable. The value is never logged or stored by TRACE.
+    /// </summary>
+    private static string RequireSecret(IConfiguration configuration, string key, string environmentVariable) =>
+        configuration[key] is { Length: > 0 } configured
+            ? configured
+            : configuration[environmentVariable] is { Length: > 0 } fromEnvironment
+                ? fromEnvironment
+                : throw new InvalidOperationException(
+                    $"An API key is required: set '{key}' or the {environmentVariable} environment variable.");
+
+    public const string MaxTokensPerInvestigationKey = "Chat:MaxTokensPerInvestigation";
+    public const string DailyTokenBudgetKey = "Chat:DailyTokenBudget";
+
+    private static ChatLimits CreateChatLimits(IServiceProvider services)
+    {
+        var configuration = services.GetRequiredService<IConfiguration>();
+        var limits = new ChatLimits();
+        limits.MaxTokensPerInvestigation = PositiveLong(configuration, MaxTokensPerInvestigationKey) ?? limits.MaxTokensPerInvestigation;
+        limits.DailyTokenBudget = PositiveLong(configuration, DailyTokenBudgetKey) ?? limits.DailyTokenBudget;
+        return limits;
+    }
+
+    private static long? PositiveLong(IConfiguration configuration, string key) =>
+        configuration[key] is not { Length: > 0 } value
+            ? null
+            : long.TryParse(value, out var parsed) && parsed > 0
+                ? parsed
+                : throw new InvalidOperationException($"'{key}' must be a positive whole number but was '{value}'.");
 
     private static bool IsEnabled(IConfiguration configuration, string key) =>
         configuration[key] is { } value

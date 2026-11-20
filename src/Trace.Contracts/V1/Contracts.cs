@@ -54,7 +54,11 @@ public sealed record InvestigationResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     InvestigationResultResponse? Result,
-    string? ErrorCode);
+    string? ErrorCode,
+    UsageResponse Usage);
+
+/// <summary>Model tokens spent on the investigation so far, across all attempts.</summary>
+public sealed record UsageResponse(long InputTokens, long OutputTokens);
 
 public sealed record InvestigationEventResponse(
     int Seq,

@@ -286,17 +286,17 @@ public class FixtureIndexingTests(PostgresFixture postgres) : IAsyncLifetime
 
         public string ModelId => inner.ModelId;
 
-        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, EmbeddingPurpose purpose, CancellationToken cancellationToken = default) =>
             remainingFailures-- > 0
                 ? throw new InvalidOperationException("embedding service unavailable")
-                : inner.EmbedAsync(texts, cancellationToken);
+                : inner.EmbedAsync(texts, purpose, cancellationToken);
     }
 
     private sealed class ShortEmbeddingProvider : IEmbeddingProvider
     {
         public string ModelId => "short-v1";
 
-        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<float[]>> EmbedAsync(IReadOnlyList<string> texts, EmbeddingPurpose purpose, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<float[]>>([new float[SourceChunk.EmbeddingDimensions]]);
     }
 }

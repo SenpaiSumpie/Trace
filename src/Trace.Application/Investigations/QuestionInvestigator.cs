@@ -38,6 +38,7 @@ public sealed class QuestionInvestigator(
     SourceTools tools,
     CitationValidator citationValidator,
     IChatModel model,
+    ChatLimits limits,
     TimeProvider timeProvider,
     Jobs.IJobSignal jobSignal)
 {
@@ -132,6 +133,14 @@ public sealed class QuestionInvestigator(
         {
             EventSeq = await store.GetLastEventSeqAsync(investigation.Id, cancellationToken),
         };
+        var spentToday = await store.SumTokensSinceAsync(timeProvider.GetUtcNow() - TimeSpan.FromHours(24), cancellationToken);
+        if (spentToday >= limits.DailyTokenBudget)
+        {
+            // Fail closed: do not call the model at all once the shared budget is used up.
+            await FailAsync(run, "budget_exhausted", "Failed: the daily model budget has been used up.");
+            return;
+        }
+
         investigation.Start(model.ModelId, QuestionPrompt.Version);
         await store.SaveAsync(investigation, [], cancellationToken);
         await EmitAsync(
@@ -158,6 +167,10 @@ public sealed class QuestionInvestigator(
         {
             // Asking again would cost another model run for an answer we already could not use.
             await FailAsync(run, "invalid_model_output", $"Failed: {exception.Message}");
+        }
+        catch (ChatModelRefusedException)
+        {
+            await FailAsync(run, "model_refused", "Failed: the language model declined to respond to this request.");
         }
         catch (ChatModelException) when (attempt >= maxAttempts)
         {
@@ -249,14 +262,26 @@ public sealed class QuestionInvestigator(
 
         for (var turnNumber = 1; turnNumber <= MaxModelTurns; turnNumber++)
         {
+            if (run.Investigation.InputTokens + run.Investigation.OutputTokens >= limits.MaxTokensPerInvestigation)
+            {
+                return (Insufficient([], ["The investigation reached its token limit before the model produced an answer."]), []);
+            }
+
             var turn = await CompleteAsync(messages, cancellationToken);
+            if (turn.Usage is { } usage)
+            {
+                // Saved after every call so spending is counted even if this attempt dies.
+                run.Investigation.RecordUsage(usage.InputTokens, usage.OutputTokens);
+                await store.SaveAsync(run.Investigation, [], cancellationToken);
+            }
+
             if (turn.ToolCalls.Count == 0)
             {
                 finalTurn = turn;
                 break;
             }
 
-            messages.Add(new AssistantToolCallsMessage(turn.ToolCalls));
+            messages.Add(new AssistantToolCallsMessage(turn.ToolCalls, turn.ProviderState));
             foreach (var call in turn.ToolCalls)
             {
                 messages.Add(await ExecuteToolAsync(run, call, cancellationToken));
@@ -307,7 +332,7 @@ public sealed class QuestionInvestigator(
             return await model.CompleteAsync(request, cancellationToken)
                 ?? throw new ChatModelException("The chat model returned no turn.");
         }
-        catch (Exception exception) when (exception is not (OperationCanceledException or ChatModelException))
+        catch (Exception exception) when (exception is not (OperationCanceledException or ChatModelException or ChatModelRefusedException))
         {
             throw new ChatModelException("The chat model call failed.", exception);
         }

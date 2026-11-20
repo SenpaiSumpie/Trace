@@ -62,6 +62,11 @@ internal sealed class EfInvestigationStore(TraceDbContext db) : IInvestigationSt
         return db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<long> SumTokensSinceAsync(DateTimeOffset since, CancellationToken cancellationToken = default) =>
+        await db.Investigations
+            .Where(i => i.CreatedAt >= since)
+            .SumAsync(i => (long?)(i.InputTokens + i.OutputTokens), cancellationToken) ?? 0;
+
     public async Task<InvestigationRecord?> GetAsync(Guid investigationId, CancellationToken cancellationToken = default)
     {
         var found = await (

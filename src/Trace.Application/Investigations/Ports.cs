@@ -54,6 +54,22 @@ public interface IInvestigationStore
         IReadOnlyList<EvidenceRef> evidence,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Model tokens (input + output) spent by all investigations created since the given time.</summary>
+    Task<long> SumTokensSinceAsync(DateTimeOffset since, CancellationToken cancellationToken = default);
+
     /// <summary>An investigation with its events, only if its repository is visible.</summary>
     Task<InvestigationRecord?> GetAsync(Guid investigationId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Spending limits for model calls. Both fail closed: when a limit is reached no further model
+/// call is made. There are no users yet, so the daily budget is shared by every caller.
+/// </summary>
+public sealed class ChatLimits
+{
+    /// <summary>Input plus output tokens one investigation may use, across all its attempts.</summary>
+    public long MaxTokensPerInvestigation { get; set; } = 300_000;
+
+    /// <summary>Input plus output tokens all investigations together may use in any 24 hours.</summary>
+    public long DailyTokenBudget { get; set; } = 3_000_000;
 }

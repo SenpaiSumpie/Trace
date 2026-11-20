@@ -52,6 +52,11 @@ public sealed class Investigation : Entity
     /// <summary>Stable machine-readable reason; set only when the investigation failed.</summary>
     public string? ErrorCode { get; private set; }
 
+    /// <summary>Model tokens spent so far, across every attempt.</summary>
+    public long InputTokens { get; private set; }
+
+    public long OutputTokens { get; private set; }
+
     public static Investigation Create(
         IndexSnapshot snapshot,
         InvestigationType type,
@@ -91,6 +96,14 @@ public sealed class Investigation : Entity
         ModelId = Guard.Required(modelId, MaxVersionLength, nameof(modelId));
         PromptVersion = Guard.Required(promptVersion, MaxVersionLength, nameof(promptVersion));
         State = InvestigationState.Running;
+    }
+
+    public void RecordUsage(long inputTokens, long outputTokens)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(inputTokens);
+        ArgumentOutOfRangeException.ThrowIfNegative(outputTokens);
+        InputTokens += inputTokens;
+        OutputTokens += outputTokens;
     }
 
     public void Complete(string resultJson)

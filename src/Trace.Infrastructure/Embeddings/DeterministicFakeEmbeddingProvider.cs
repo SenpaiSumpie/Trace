@@ -17,6 +17,7 @@ public sealed partial class DeterministicFakeEmbeddingProvider : IEmbeddingProvi
 
     public Task<IReadOnlyList<float[]>> EmbedAsync(
         IReadOnlyList<string> texts,
+        EmbeddingPurpose purpose,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(texts);

@@ -1,3 +1,4 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Trace.Api;
 using Trace.Infrastructure;
@@ -15,6 +16,21 @@ builder.Services.AddProblemDetails();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 
 builder.Services.AddTraceInfrastructure();
+
+// Starting investigations and index jobs costs model calls and worker time, so those requests
+// are limited per client address. There are no users yet to limit by.
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    limiter.AddPolicy(V1Endpoints.WriteRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            // Read when first needed so every configuration source has been applied.
+            PermitLimit = context.RequestServices.GetRequiredService<IConfiguration>().GetValue("RateLimits:WritesPerMinute", 20),
+            Window = TimeSpan.FromMinutes(1),
+        }));
+});
 if (InfrastructureServiceCollectionExtensions.ShouldProcessJobsInThisHost(builder.Configuration))
 {
     builder.Services.AddTraceJobProcessing();
@@ -27,6 +43,7 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseRateLimiter();
 
 // Liveness: the process is up. Readiness: its dependencies are reachable.
 app.MapHealthChecks("/health", new HealthCheckOptions { Predicate = _ => false });

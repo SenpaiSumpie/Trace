@@ -324,6 +324,63 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
     }
 
     [Fact]
+    public async Task Token_usage_reported_by_the_model_is_recorded_on_the_investigation()
+    {
+        ScriptedChatModel model = null!;
+        model = new ScriptedChatModel(
+            _ => ModelTurn.Call(model.Search("page")) with { Usage = new ModelUsage(1_000, 50) },
+            _ => ScriptedChatModel.NotEnoughEvidence() with { Usage = new ModelUsage(1_800, 120) });
+
+        var record = await AskAsync(model);
+
+        Assert.Equal((2_800L, 170L), (record.Investigation.InputTokens, record.Investigation.OutputTokens));
+    }
+
+    [Fact]
+    public async Task Investigation_stops_calling_the_model_once_its_token_limit_is_reached()
+    {
+        ScriptedChatModel model = null!;
+        model = new ScriptedChatModel(_ => ModelTurn.Call(model.Search("page")) with { Usage = new ModelUsage(900, 200) });
+
+        var record = await AskAsync(model, limits: new ChatLimits { MaxTokensPerInvestigation = 2_000 });
+
+        var result = InvestigationResult.FromJson(record.Investigation.ResultJson!);
+        Assert.Equal(2, model.Requests.Count);
+        Assert.Equal(InvestigationOutcome.InsufficientEvidence, result.Outcome);
+        Assert.Contains(result.Limitations, limitation => limitation.Contains("token limit", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task No_model_call_is_made_once_the_shared_daily_budget_is_spent()
+    {
+        ScriptedChatModel spender = null!;
+        spender = new ScriptedChatModel(_ => ScriptedChatModel.NotEnoughEvidence() with { Usage = new ModelUsage(5_000_000_000, 1) });
+        await AskAsync(spender);
+        var model = new ScriptedChatModel(_ => ScriptedChatModel.NotEnoughEvidence());
+
+        var record = await AskAsync(model);
+
+        Assert.Empty(model.Requests);
+        Assert.Equal((InvestigationState.Failed, "budget_exhausted"), (record.Investigation.State, record.Investigation.ErrorCode));
+        Assert.Equal(InvestigationEventType.Failed, record.Events[^1].EventType);
+
+        // Leave the shared fixture database usable for the other tests in this class.
+        await using var db = indexed.Database.CreateContext();
+        await db.Database.ExecuteSqlAsync($"UPDATE investigations SET input_tokens = 0");
+    }
+
+    [Fact]
+    public async Task Model_refusal_fails_the_investigation_without_retrying()
+    {
+        var model = new ScriptedChatModel(_ => throw new ChatModelRefusedException("declined"));
+
+        var record = await AskAsync(model);
+
+        Assert.Single(model.Requests);
+        Assert.Equal((InvestigationState.Failed, "model_refused"), (record.Investigation.State, record.Investigation.ErrorCode));
+    }
+
+    [Fact]
     public async Task Repeating_a_request_with_the_same_idempotency_key_returns_the_first_investigation()
     {
         var key = Guid.NewGuid().ToString();
@@ -377,7 +434,8 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
         string? idempotencyKey = null,
         Guid? repositoryId = null,
         Guid? snapshotId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ChatLimits? limits = null)
     {
         await using var scope = indexed.Database.CreateScope();
         var services = scope.ServiceProvider;
@@ -388,6 +446,7 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
             services.GetRequiredService<SourceTools>(),
             services.GetRequiredService<CitationValidator>(),
             model,
+            limits ?? services.GetRequiredService<ChatLimits>(),
             TimeProvider.System,
             services.GetRequiredService<IJobSignal>());
 

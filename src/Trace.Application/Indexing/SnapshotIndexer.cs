@@ -55,7 +55,8 @@ public sealed class SnapshotIndexer(ISnapshotStore store, IEmbeddingProvider emb
             var drafts = revision.Files.SelectMany(LineChunker.Chunk).ToList();
             foreach (var batch in drafts.Chunk(EmbeddingBatchSize))
             {
-                var vectors = await embeddings.EmbedAsync([.. batch.Select(draft => draft.Text)], cancellationToken);
+                var vectors = await embeddings.EmbedAsync(
+                    [.. batch.Select(draft => draft.Text)], EmbeddingPurpose.Document, cancellationToken);
                 if (vectors.Count != batch.Length)
                 {
                     throw new InvalidOperationException(

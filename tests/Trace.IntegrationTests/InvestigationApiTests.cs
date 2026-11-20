@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Trace.Contracts.V1;
 using Trace.Domain;
 using Trace.IntegrationTests.Support;
@@ -34,6 +36,12 @@ public sealed class DemoApi(PostgresFixture postgres) : IAsyncLifetime
         await factory.DisposeAsync();
         await Database.DisposeAsync();
     }
+
+    /// <summary>A client for a second instance of the API on the same database, with extra settings.</summary>
+    public HttpClient CreateClient(IReadOnlyDictionary<string, string?> settings) =>
+        factory.WithDatabase(Database.ConnectionString, initializeOnStartup: false)
+            .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings)))
+            .CreateClient();
 
     public async Task<RepositoryResponse> DemoRepositoryAsync() =>
         Assert.Single((await Client.GetFromJsonAsync<List<RepositoryResponse>>("/api/v1/repositories"))!);
@@ -269,6 +277,27 @@ public class InvestigationApiTests(DemoApi api) : IClassFixture<DemoApi>
         Assert.Equal(HttpStatusCode.NotFound, ask.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, read.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, events.StatusCode);
+    }
+
+    [Fact]
+    public async Task Starting_work_is_rate_limited_per_client()
+    {
+        var repository = await api.DemoRepositoryAsync();
+        using var limited = api.CreateClient(new Dictionary<string, string?> { ["RateLimits:WritesPerMinute"] = "2" });
+        var body = new CreateInvestigationRequest(repository.Id, repository.LatestSnapshot!.Id, "question", Question, null);
+
+        var statuses = new List<HttpStatusCode>();
+        for (var i = 0; i < 4; i++)
+        {
+            using var response = await limited.PostAsJsonAsync("/api/v1/investigations", body);
+            statuses.Add(response.StatusCode);
+        }
+
+        Assert.Equal([HttpStatusCode.Accepted, HttpStatusCode.Accepted, HttpStatusCode.TooManyRequests, HttpStatusCode.TooManyRequests], statuses);
+
+        // Reading is not limited.
+        using var read = await limited.GetAsync("/api/v1/repositories");
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
     }
 
     private Task<HttpResponseMessage> PostAsync(
