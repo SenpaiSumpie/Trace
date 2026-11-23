@@ -212,7 +212,7 @@ internal static class V1Endpoints
                     result.Unknowns,
                     result.Limitations),
             investigation.ErrorCode,
-            new UsageResponse(investigation.InputTokens, investigation.OutputTokens));
+            new UsageResponse(investigation.InputTokens, investigation.OutputTokens, investigation.CacheReadTokens, investigation.CacheWriteTokens));
     }
 
     private static string Snake<TEnum>(TEnum value)

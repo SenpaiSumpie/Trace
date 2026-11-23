@@ -127,6 +127,10 @@ provider, index again (the Index again button, or `POST /api/v1/repositories/<id
 questions. With real providers, indexed source text is sent to Voyage and retrieved passages to
 Anthropic.
 
+What it costs: on one small repository a question measured about $0.12-$0.14 with
+`claude-opus-5-5` (two questions, one run each; see row 64 of
+[docs/open-questions.md](docs/open-questions.md)). Each result shows the tokens it used.
+
 ## Telemetry
 
 Every response carries an `X-Correlation-ID` header (send your own, or one is generated). The

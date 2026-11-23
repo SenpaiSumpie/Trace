@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { type Evidence, type Investigation, listEvents } from './api.ts'
+import { type Evidence, type Investigation, listEvents, type Usage } from './api.ts'
 
 export const POLL_INTERVAL_MS = 500
 
@@ -13,6 +13,7 @@ const failureReasons: Record<string, string> = {
 
 export function InvestigationView({ investigation }: { investigation: Investigation }) {
   const result = investigation.result
+  const usage = investigation.usage
 
   return (
     <article className="investigation" aria-labelledby="result-heading">
@@ -99,10 +100,17 @@ export function InvestigationView({ investigation }: { investigation: Investigat
             with prompt <code>{investigation.promptVersion}</code>
           </>
         )}
-        .
+        .{usage && usage.inputTokens + usage.outputTokens > 0 && ` ${describeUsage(usage)}`}
       </p>
     </article>
   )
+}
+
+/** Tokens are what the model provider bills for; cached input is billed at a fraction of the normal price. */
+function describeUsage(usage: Usage): string {
+  const count = (value: number) => value.toLocaleString('en-US')
+  const cached = usage.cacheReadTokens ?? 0
+  return `Used ${count(usage.inputTokens)} input tokens${cached > 0 ? ` (${count(cached)} from cache)` : ''} and ${count(usage.outputTokens)} output tokens.`
 }
 
 function EvidencePassage({ evidence }: { evidence: Evidence }) {

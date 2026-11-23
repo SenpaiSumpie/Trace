@@ -242,6 +242,151 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
         Assert.Contains($": {QuestionInvestigator.MaxSearchHitsPerCall} result(s).", record.Events[1].Summary, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Only_the_best_hits_of_a_search_carry_text_and_a_previewed_hit_cannot_be_cited_until_it_is_read()
+    {
+        ScriptedChatModel model = null!;
+        (string Path, int StartLine, int EndLine) previewed = default;
+        model = new ScriptedChatModel(
+            _ => ModelTurn.Call(model.Search("page", limit: 8)),
+            request =>
+            {
+                var hits = Hits(ScriptedChatModel.LastToolResults(request)[0]);
+                previewed = Location(hits.Last(hit => hit.TryGetProperty("previewOnly", out _)));
+                return ScriptedChatModel.Answer("Claims something about a passage it only saw one line of.", previewed);
+            });
+
+        var record = await AskAsync(model);
+
+        using var output = System.Text.Json.JsonDocument.Parse(ScriptedChatModel.LastToolResults(model.Requests[1])[0].Content);
+        var returned = output.RootElement.GetProperty("hits").EnumerateArray().ToList();
+        Assert.Equal(QuestionInvestigator.MaxSearchHitsPerCall, returned.Count);
+        Assert.All(returned.Take(QuestionInvestigator.FullTextHitsPerSearch), hit =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(hit.GetProperty("text").GetString()));
+            Assert.False(hit.TryGetProperty("previewOnly", out _));
+        });
+        Assert.All(returned.Skip(QuestionInvestigator.FullTextHitsPerSearch), hit =>
+        {
+            Assert.True(hit.GetProperty("previewOnly").GetBoolean());
+            Assert.False(hit.TryGetProperty("text", out _));
+            var preview = hit.GetProperty("preview").GetString()!;
+            Assert.InRange(preview.Length, 1, QuestionInvestigator.MaxPreviewLength);
+            Assert.DoesNotContain('\n', preview);
+        });
+        Assert.Equal(QuestionInvestigator.SearchNote, output.RootElement.GetProperty("note").GetString());
+
+        // One line is not evidence: the citation is discarded and nothing is answered.
+        Assert.Equal(InvestigationOutcome.InsufficientEvidence, InvestigationResult.FromJson(record.Investigation.ResultJson!).Outcome);
+        Assert.Contains(record.Events, e =>
+            e.EventType == InvestigationEventType.CitationRejected
+            && e.Summary.Contains("not retrieved during this investigation", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_previewed_hit_can_be_cited_after_reading_it()
+    {
+        ScriptedChatModel model = null!;
+        (string Path, int StartLine, int EndLine) previewed = default;
+        model = new ScriptedChatModel(
+            _ => ModelTurn.Call(model.Search("page", limit: 8)),
+            request =>
+            {
+                previewed = Location(Hits(ScriptedChatModel.LastToolResults(request)[0]).Last(hit => hit.TryGetProperty("previewOnly", out _)));
+                return ModelTurn.Call(model.Read(previewed.Path, previewed.StartLine, previewed.EndLine));
+            },
+            _ => ScriptedChatModel.Answer("Answers from the passage it opened.", previewed));
+
+        var record = await AskAsync(model);
+
+        var result = InvestigationResult.FromJson(record.Investigation.ResultJson!);
+        Assert.Equal(InvestigationOutcome.Answered, result.Outcome);
+        Assert.Equal(previewed, Assert.Single(result.Evidence.Select(e => (e.Path, e.StartLine, e.EndLine))));
+    }
+
+    [Fact]
+    public async Task A_passage_is_sent_in_full_only_once_and_stays_citable_when_a_later_search_finds_it_again()
+    {
+        ScriptedChatModel model = null!;
+        (string Path, int StartLine, int EndLine) repeated = default;
+        model = new ScriptedChatModel(
+            _ => ModelTurn.Call(model.Search("page", limit: 3)),
+            _ => ModelTurn.Call(model.Search("page", limit: 3)),
+            request =>
+            {
+                repeated = Location(Hits(ScriptedChatModel.LastToolResults(request)[0])[0]);
+                return ScriptedChatModel.Answer("Cites a passage that was returned in full by the first search.", repeated);
+            });
+
+        var record = await AskAsync(model);
+
+        var first = Hits(ScriptedChatModel.LastToolResults(model.Requests[1])[0]);
+        var second = Hits(ScriptedChatModel.LastToolResults(model.Requests[2])[0]);
+        Assert.All(first, hit => Assert.False(string.IsNullOrWhiteSpace(hit.GetProperty("text").GetString())));
+        Assert.Equal(first.Select(Location), second.Select(Location));
+        Assert.All(second, hit =>
+        {
+            Assert.True(hit.GetProperty("shownEarlier").GetBoolean());
+            Assert.False(hit.TryGetProperty("text", out _));
+            Assert.False(hit.TryGetProperty("preview", out _));
+        });
+        Assert.True(
+            ScriptedChatModel.LastToolResults(model.Requests[2])[0].Content.Length
+                < ScriptedChatModel.LastToolResults(model.Requests[1])[0].Content.Length / 2,
+            "The repeated search should cost far less than the first.");
+
+        var result = InvestigationResult.FromJson(record.Investigation.ResultJson!);
+        Assert.Equal(InvestigationOutcome.Answered, result.Outcome);
+        Assert.Equal(repeated, Assert.Single(result.Evidence.Select(e => (e.Path, e.StartLine, e.EndLine))));
+    }
+
+    [Fact]
+    public async Task Source_reaches_the_model_as_written_not_as_escape_codes()
+    {
+        ScriptedChatModel model = null!;
+        model = new ScriptedChatModel(
+            _ => ModelTurn.Call(model.Search("task list first page skip"), model.Read(TaskRepositoryPath, 1, 40)),
+            _ => ScriptedChatModel.NotEnoughEvidence());
+
+        await AskAsync(model);
+
+        var results = ScriptedChatModel.LastToolResults(model.Requests[1]);
+        Assert.Equal(2, results.Count);
+        Assert.All(results, result =>
+        {
+            // Quotes inside source are a plain backslash-quote; nothing is written as \uXXXX.
+            Assert.DoesNotContain("\\u00", result.Content, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("<", result.Content, StringComparison.Ordinal);
+
+            // Still one well-formed JSON document.
+            using var parsed = System.Text.Json.JsonDocument.Parse(result.Content);
+            Assert.Equal(System.Text.Json.JsonValueKind.Object, parsed.RootElement.ValueKind);
+        });
+    }
+    [Fact]
+    public async Task A_search_whose_hits_all_carry_text_has_no_note()
+    {
+        ScriptedChatModel model = null!;
+        model = new ScriptedChatModel(
+            _ => ModelTurn.Call(model.Search("page", limit: 5)),
+            _ => ScriptedChatModel.NotEnoughEvidence());
+
+        await AskAsync(model);
+
+        using var output = System.Text.Json.JsonDocument.Parse(ScriptedChatModel.LastToolResults(model.Requests[1])[0].Content);
+        Assert.False(output.RootElement.TryGetProperty("note", out _));
+        Assert.All(output.RootElement.GetProperty("hits").EnumerateArray(), hit => Assert.True(hit.TryGetProperty("text", out _)));
+    }
+
+    private static List<System.Text.Json.JsonElement> Hits(ToolResultMessage result)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(result.Content);
+        return [.. document.RootElement.GetProperty("hits").EnumerateArray().Select(hit => hit.Clone())];
+    }
+
+    private static (string Path, int StartLine, int EndLine) Location(System.Text.Json.JsonElement hit) =>
+        (hit.GetProperty("path").GetString()!, hit.GetProperty("startLine").GetInt32(), hit.GetProperty("endLine").GetInt32());
+
     [Theory]
     [InlineData("I think the answer is that paging is broken.")]
     [InlineData("{\"sufficientEvidence\": true, \"answer\": 5}")]
@@ -328,12 +473,13 @@ public class InvestigationWorkflowTests(IndexedSampleRepo indexed) : IClassFixtu
     {
         ScriptedChatModel model = null!;
         model = new ScriptedChatModel(
-            _ => ModelTurn.Call(model.Search("page")) with { Usage = new ModelUsage(1_000, 50) },
-            _ => ScriptedChatModel.NotEnoughEvidence() with { Usage = new ModelUsage(1_800, 120) });
+            _ => ModelTurn.Call(model.Search("page")) with { Usage = new ModelUsage(1_000, 50, CacheWriteTokens: 900) },
+            _ => ScriptedChatModel.NotEnoughEvidence() with { Usage = new ModelUsage(1_800, 120, CacheReadTokens: 900, CacheWriteTokens: 700) });
 
         var record = await AskAsync(model);
 
         Assert.Equal((2_800L, 170L), (record.Investigation.InputTokens, record.Investigation.OutputTokens));
+        Assert.Equal((900L, 1_600L), (record.Investigation.CacheReadTokens, record.Investigation.CacheWriteTokens));
     }
 
     [Fact]

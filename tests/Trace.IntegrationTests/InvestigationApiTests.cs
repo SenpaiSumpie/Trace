@@ -80,7 +80,7 @@ public class InvestigationApiTests(DemoApi api) : IClassFixture<DemoApi>
         var finished = await WaitUntilFinishedAsync(accepted.InvestigationId);
         Assert.Equal(("question", Question, "completed"), (finished.Type, finished.Question, finished.State));
         Assert.Equal(repository.LatestSnapshot.CommitSha, finished.CommitSha);
-        Assert.Equal(("fake-extractive-v1", "question-v1"), (finished.ModelId, finished.PromptVersion));
+        Assert.Equal(("fake-extractive-v1", Trace.Application.Investigations.QuestionPrompt.Version), (finished.ModelId, finished.PromptVersion));
         Assert.Null(finished.ErrorCode);
 
         var result = finished.Result!;

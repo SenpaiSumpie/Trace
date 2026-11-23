@@ -69,11 +69,13 @@ public sealed class AnthropicChatModel(AnthropicClient client, AnthropicChatOpti
             throw new ChatModelException("The Anthropic API could not be reached.", exception);
         }
 
+        var cacheRead = response.Usage.CacheReadInputTokens ?? 0;
+        var cacheWrite = response.Usage.CacheCreationInputTokens ?? 0;
         var usage = new ModelUsage(
-            response.Usage.InputTokens
-                + (response.Usage.CacheCreationInputTokens ?? 0)
-                + (response.Usage.CacheReadInputTokens ?? 0),
-            response.Usage.OutputTokens);
+            response.Usage.InputTokens + cacheWrite + cacheRead,
+            response.Usage.OutputTokens,
+            cacheRead,
+            cacheWrite);
 
         // Always check the stop reason before trusting the content.
         if (response.StopReason == StopReason.Refusal)

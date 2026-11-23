@@ -60,6 +60,12 @@ public sealed class Investigation : Entity
 
     public long OutputTokens { get; private set; }
 
+    /// <summary>The part of <see cref="InputTokens"/> that was read from the provider's prompt cache.</summary>
+    public long CacheReadTokens { get; private set; }
+
+    /// <summary>The part of <see cref="InputTokens"/> that was written to the provider's prompt cache.</summary>
+    public long CacheWriteTokens { get; private set; }
+
     public static Investigation Create(
         IndexSnapshot snapshot,
         InvestigationType type,
@@ -103,12 +109,16 @@ public sealed class Investigation : Entity
         State = InvestigationState.Running;
     }
 
-    public void RecordUsage(long inputTokens, long outputTokens)
+    public void RecordUsage(long inputTokens, long outputTokens, long cacheReadTokens = 0, long cacheWriteTokens = 0)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(inputTokens);
         ArgumentOutOfRangeException.ThrowIfNegative(outputTokens);
+        ArgumentOutOfRangeException.ThrowIfNegative(cacheReadTokens);
+        ArgumentOutOfRangeException.ThrowIfNegative(cacheWriteTokens);
         InputTokens += inputTokens;
         OutputTokens += outputTokens;
+        CacheReadTokens += cacheReadTokens;
+        CacheWriteTokens += cacheWriteTokens;
     }
 
     public void Complete(string resultJson)

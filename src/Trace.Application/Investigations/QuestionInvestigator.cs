@@ -49,6 +49,19 @@ public sealed class QuestionInvestigator(
     public const int MaxSearchHitsPerCall = 8;
     public const int DefaultSearchHits = 5;
 
+    /// <summary>
+    /// How many hits of one search are returned with their full text. Further hits come back as
+    /// a one-line preview the model can open with read_file_range, so a wide search does not
+    /// cost a full passage for every weak match.
+    /// </summary>
+    public const int FullTextHitsPerSearch = 5;
+
+    public const int MaxPreviewLength = 160;
+
+    public const string SearchNote =
+        "Hits with previewOnly show a single line: call read_file_range for their text before relying on or citing them. "
+        + "Hits with shownEarlier were returned in full earlier in this conversation and are not repeated.";
+
     /// <summary>Upper bound on the total characters of tool output given to the model in one investigation.</summary>
     public const int MaxToolOutputChars = 120_000;
 
@@ -63,6 +76,18 @@ public sealed class QuestionInvestigator(
     };
 
     private static readonly JsonSerializerOptions ToolResultJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// For tool results sent to the model. The default encoder writes every quote, angle
+    /// bracket, ampersand, plus sign and non-ASCII character of source code as a six-character
+    /// escape, which costs several tokens each and makes the code harder to read. That
+    /// escaping protects JSON pasted into HTML; these strings only ever go to the model API.
+    /// </summary>
+    private static readonly JsonSerializerOptions ModelFacingJson = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     /// <summary>
     /// Validates the request and stores a queued investigation together with the job that will
@@ -323,7 +348,7 @@ public sealed class QuestionInvestigator(
             if (turn.Usage is { } usage)
             {
                 // Saved after every call so spending is counted even if this attempt dies.
-                run.Investigation.RecordUsage(usage.InputTokens, usage.OutputTokens);
+                run.Investigation.RecordUsage(usage.InputTokens, usage.OutputTokens, usage.CacheReadTokens, usage.CacheWriteTokens);
                 await store.SaveAsync(run.Investigation, [], cancellationToken);
             }
 
@@ -395,6 +420,9 @@ public sealed class QuestionInvestigator(
             {
                 activity?.SetTag("gen_ai.usage.input_tokens", usage.InputTokens);
                 activity?.SetTag("gen_ai.usage.output_tokens", usage.OutputTokens);
+                activity?.SetTag("gen_ai.usage.cache_read.input_tokens", usage.CacheReadTokens);
+                activity?.SetTag("gen_ai.usage.cache_creation.input_tokens", usage.CacheWriteTokens);
+                TraceTelemetry.ModelTokens.Add(usage.CacheReadTokens, modelTag, new("gen_ai.token.type", "cache_read"));
                 TraceTelemetry.ModelTokens.Add(usage.InputTokens, modelTag, new("gen_ai.token.type", "input"));
                 TraceTelemetry.ModelTokens.Add(usage.OutputTokens, modelTag, new("gen_ai.token.type", "output"));
             }
@@ -483,7 +511,8 @@ public sealed class QuestionInvestigator(
 
             await EmitAsync(
                 run, InvestigationEventType.ToolCalled, summary, call.Name,
-                JsonSerializer.Serialize(new { latencyMs = stopwatch.ElapsedMilliseconds, resultCount }, ToolResultJson),
+                JsonSerializer.Serialize(
+                    new { latencyMs = stopwatch.ElapsedMilliseconds, resultCount, outputChars = content.Length }, ToolResultJson),
                 cancellationToken);
             return new ToolResultMessage(call.Id, call.Name, content, IsError: false);
         }
@@ -518,28 +547,48 @@ public sealed class QuestionInvestigator(
         var result = await tools.SearchCodeAsync(
             run.Investigation.RepositoryId, run.Investigation.SnapshotId, arguments.Query!, limit, cancellationToken);
 
-        var content = JsonSerializer.Serialize(
-            new
+        // Each passage is sent to the model in full at most once per investigation, and only
+        // the best hits of a search are sent in full at all.
+        var hits = new List<SearchHitOutput>(result.Hits.Count);
+        var shown = new List<(string Path, int StartLine, int EndLine)>();
+        foreach (var hit in result.Hits)
+        {
+            var location = (hit.Path, hit.StartLine, hit.EndLine);
+            if (run.HasSeen(hit.Path, hit.StartLine, hit.EndLine))
             {
-                result.CommitSha,
-                hits = result.Hits.Select(hit => new
-                {
-                    hit.Path,
-                    hit.StartLine,
-                    hit.EndLine,
-                    hit.Language,
-                    hit.LexicalRank,
-                    hit.VectorRank,
-                    text = hit.Excerpt,
-                }),
-            },
-            ToolResultJson);
+                hits.Add(new SearchHitOutput(hit.Path, hit.StartLine, hit.EndLine, hit.Language, hit.LexicalRank, hit.VectorRank, ShownEarlier: true));
+            }
+            else if (shown.Count < FullTextHitsPerSearch)
+            {
+                shown.Add(location);
+                hits.Add(new SearchHitOutput(hit.Path, hit.StartLine, hit.EndLine, hit.Language, hit.LexicalRank, hit.VectorRank, Text: hit.Excerpt));
+            }
+            else
+            {
+                hits.Add(new SearchHitOutput(
+                    hit.Path, hit.StartLine, hit.EndLine, hit.Language, hit.LexicalRank, hit.VectorRank,
+                    Preview: Preview(hit.Excerpt), PreviewOnly: true));
+            }
+        }
 
+        var abbreviated = hits.Any(hit => hit.PreviewOnly is true || hit.ShownEarlier is true);
+        var content = JsonSerializer.Serialize(
+            new SearchOutput(result.CommitSha, hits, abbreviated ? SearchNote : null), ModelFacingJson);
+
+        // Only passages whose text was sent count as seen, so only those can be cited.
         return new ToolOutput(
             content,
             $"Searched the code for \"{Clean(arguments.Query!, 120)}\": {result.Hits.Count} result(s).",
             result.Hits.Count,
-            [.. result.Hits.Select(hit => (hit.Path, hit.StartLine, hit.EndLine))]);
+            shown);
+    }
+
+    /// <summary>The first line of a passage that has any text, shortened.</summary>
+    private static string Preview(string excerpt)
+    {
+        var line = excerpt.Split('\n').Select(candidate => candidate.Trim()).FirstOrDefault(candidate => candidate.Length > 0)
+            ?? string.Empty;
+        return Clean(line, MaxPreviewLength);
     }
 
     private async Task<ToolOutput> ReadAsync(Run run, ToolCall call, CancellationToken cancellationToken)
@@ -559,7 +608,7 @@ public sealed class QuestionInvestigator(
                 range.EndLine,
                 lines = range.Lines.Select(line => new { n = line.Number, text = line.Text }),
             },
-            ToolResultJson);
+            ModelFacingJson);
 
         return new ToolOutput(
             content,
@@ -682,6 +731,20 @@ public sealed class QuestionInvestigator(
     }
 
     private sealed record SearchArguments(string? Query, int? Limit);
+
+    private sealed record SearchOutput(string CommitSha, IReadOnlyList<SearchHitOutput> Hits, string? Note);
+
+    private sealed record SearchHitOutput(
+        string Path,
+        int StartLine,
+        int EndLine,
+        string Language,
+        int? LexicalRank,
+        int? VectorRank,
+        string? Text = null,
+        string? Preview = null,
+        bool? PreviewOnly = null,
+        bool? ShownEarlier = null);
 
     private sealed record ReadArguments(string? Path, int StartLine, int EndLine);
 

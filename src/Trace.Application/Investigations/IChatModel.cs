@@ -23,7 +23,12 @@ public sealed record ModelRequest(
     IReadOnlyList<ToolDefinition> Tools);
 
 /// <summary>Tokens billed for one model call. Input includes any cached tokens.</summary>
-public sealed record ModelUsage(long InputTokens, long OutputTokens);
+/// <summary>
+/// Tokens used by one model call. <paramref name="InputTokens"/> is every input token,
+/// including the two cached kinds, which providers bill differently: tokens read from a prompt
+/// cache cost a fraction of the normal price, and tokens written to it cost somewhat more.
+/// </summary>
+public sealed record ModelUsage(long InputTokens, long OutputTokens, long CacheReadTokens = 0, long CacheWriteTokens = 0);
 
 /// <summary>One model turn: either tool calls to run, or the final answer text.</summary>
 public sealed record ModelTurn(

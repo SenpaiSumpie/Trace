@@ -4,7 +4,7 @@ namespace Trace.Application.Investigations;
 public static class QuestionPrompt
 {
     /// <summary>Recorded on each investigation. Change it whenever the prompt, tools or answer schema change.</summary>
-    public const string Version = "question-v1";
+    public const string Version = "question-v2";
 
     public const string SearchCode = "search_code";
     public const string ReadFileRange = "read_file_range";
@@ -38,7 +38,7 @@ public static class QuestionPrompt
     [
         new ToolDefinition(
             SearchCode,
-            "Search the repository snapshot for code and documentation relevant to a query. Returns ranked excerpts with path and line range.",
+            "Search the repository snapshot for code and documentation relevant to a query. Returns ranked hits with path and line range. The best hits include their text; lower-ranked hits are a one-line preview (previewOnly) that you can open with read_file_range, and passages already returned in full are listed without their text (shownEarlier).",
             """
             {
               "type": "object",

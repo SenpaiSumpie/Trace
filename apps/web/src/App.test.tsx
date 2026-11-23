@@ -169,6 +169,21 @@ test('cancels a running investigation through its job', async () => {
   expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(false)
 })
 
+test('shows what the answer cost in tokens, with the cached share', async () => {
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'POST /api/v1/investigations': () =>
+      json({ ...answered, usage: { inputTokens: 47330, outputTokens: 2537, cacheReadTokens: 33223, cacheWriteTokens: 14095 } }, 201),
+    'GET /api/v1/investigations/inv-1/events': () => json(events),
+  })
+
+  await ask('Why does page one skip results?')
+
+  expect(
+    await screen.findByText('Used 47,330 input tokens (33,223 from cache) and 2,537 output tokens.', { exact: false }),
+  ).toBeTruthy()
+})
+
 test('shows the insufficient-evidence state without an evidence section', async () => {
   const insufficient: Investigation = {
     ...answered,

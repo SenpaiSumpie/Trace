@@ -33,6 +33,13 @@ export interface InvestigationResult {
   limitations: string[]
 }
 
+export interface Usage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+}
+
 export interface Investigation {
   investigationId: string
   jobId: string | null
@@ -48,7 +55,7 @@ export interface Investigation {
   updatedAt: string
   result: InvestigationResult | null
   errorCode: string | null
-  usage?: { inputTokens: number; outputTokens: number }
+  usage?: Usage
 }
 
 export interface InvestigationEvent {

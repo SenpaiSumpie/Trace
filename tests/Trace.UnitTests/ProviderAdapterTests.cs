@@ -84,7 +84,7 @@ public class ProviderAdapterTests
         Assert.Equal(("toolu_1", "search_code"), (call.Id, call.Name));
         Assert.Equal("page size", JsonDocument.Parse(call.ArgumentsJson).RootElement.GetProperty("query").GetString());
         Assert.Null(turn.FinalText);
-        Assert.Equal(new ModelUsage(135, 20), turn.Usage);
+        Assert.Equal(new ModelUsage(135, 20, CacheReadTokens: 5, CacheWriteTokens: 30), turn.Usage);
 
         // The next request must send the assistant turn back exactly, thinking signature included.
         await model.CompleteAsync(new ModelRequest(

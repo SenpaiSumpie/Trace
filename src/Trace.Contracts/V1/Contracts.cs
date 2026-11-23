@@ -58,7 +58,10 @@ public sealed record InvestigationResponse(
     UsageResponse Usage);
 
 /// <summary>Model tokens spent on the investigation so far, across all attempts.</summary>
-public sealed record UsageResponse(long InputTokens, long OutputTokens);
+/// <param name="InputTokens">Every input token, including the two cached kinds.</param>
+/// <param name="CacheReadTokens">Input tokens read from the provider's prompt cache (billed at a fraction of the normal price).</param>
+/// <param name="CacheWriteTokens">Input tokens written to the provider's prompt cache (billed somewhat above the normal price).</param>
+public sealed record UsageResponse(long InputTokens, long OutputTokens, long CacheReadTokens = 0, long CacheWriteTokens = 0);
 
 public sealed record InvestigationEventResponse(
     int Seq,
