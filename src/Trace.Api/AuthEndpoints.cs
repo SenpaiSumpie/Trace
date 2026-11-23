@@ -27,7 +27,7 @@ internal sealed class HttpContextCurrentUser(IHttpContextAccessor accessor) : IC
 /// and login. No GitHub token is kept after sign-in.
 /// </para>
 /// </summary>
-internal static class AuthEndpoints
+internal static partial class AuthEndpoints
 {
     public const string AllowAnonymousWritesKey = "Auth:AllowAnonymousWrites";
 
@@ -105,6 +105,7 @@ internal static class AuthEndpoints
             string? state,
             HttpContext context,
             GitHubSignIn signIn,
+            ILoggerFactory loggers,
             CancellationToken cancellationToken) =>
         {
             var expected = context.Request.Cookies[StateCookie];
@@ -122,8 +123,9 @@ internal static class AuthEndpoints
             {
                 user = await signIn.SignInAsync(code, cancellationToken);
             }
-            catch (GitHubApiException)
+            catch (GitHubApiException exception)
             {
+                SignInFailed(loggers.CreateLogger(typeof(AuthEndpoints).FullName!), exception.Message);
                 return Results.Problem(detail: "GitHub did not complete the sign-in. Try again.", statusCode: StatusCodes.Status502BadGateway);
             }
 
@@ -182,6 +184,9 @@ internal static class AuthEndpoints
                 ? await next(context)
                 : Results.Problem(detail: "Sign in to do this.", statusCode: StatusCodes.Status401Unauthorized);
         });
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Sign-in failed: {Reason}")]
+    private static partial void SignInFailed(ILogger logger, string reason);
 
     private static CookieSecurePolicy SecurePolicy(IHostEnvironment environment) =>
         environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;

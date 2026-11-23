@@ -70,8 +70,18 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
         var token = await SendAsync<TokenResponse>(request, cancellationToken);
         return token.AccessToken is { Length: > 0 } accessToken
             ? accessToken
-            : throw new GitHubApiException("GitHub did not accept the sign-in code.");
+            : throw new GitHubApiException($"GitHub did not accept the sign-in code ({ErrorCode(token.Error)}).");
     }
+
+    /// <summary>
+    /// GitHub answers a refused exchange with 200 and an error name such as
+    /// <c>incorrect_client_credentials</c> or <c>bad_verification_code</c>. Only names of that
+    /// shape are repeated, so nothing else from the response can reach a log.
+    /// </summary>
+    private static string ErrorCode(string? error) =>
+        error is { Length: > 0 and <= 64 } && error.All(character => character is (>= 'a' and <= 'z') or '_')
+            ? error
+            : "no error name given";
 
     public async Task<GitHubUser> GetUserAsync(string userToken, CancellationToken cancellationToken = default)
     {
@@ -242,7 +252,7 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-    private sealed record TokenResponse(string? AccessToken);
+    private sealed record TokenResponse(string? AccessToken, string? Error);
 
     private sealed record UserResponse(long Id, string? Login);
 
