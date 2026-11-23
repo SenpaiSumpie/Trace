@@ -38,14 +38,21 @@ line range. The full specification is in
   delete data, and files that look like they contain credentials are never indexed
   ([ADR-002](docs/adr/ADR-002-github-app-auth-and-authorization.md)). **Not yet tried against the
   real GitHub: the app has to be registered first** ([setup](docs/github-app-setup.md)).
+- Reading GitHub issues, read-only: list a repository's open issues and fetch one with its
+  comments, for a repository the caller can see, with size limits whose every cut is flagged
+  and pull requests left out. Issue text is fetched on demand and not stored, never reaches a
+  log or a span, and is not yet given to any model. The demo repository serves invented fixture
+  issues from files ([ADR-015](docs/adr/ADR-015-reading-github-issues.md)). **Never run against
+  real GitHub issues: the GitHub App first needs a read-only Issues permission that only its
+  owner can approve** ([how](docs/github-app-setup.md#adding-the-issues-permission-to-an-existing-app)).
 - Deployment artifacts: production images for web, API and worker, a compose file that runs the
   whole stack from them, and an Azure template (Container Apps + PostgreSQL). **Nothing has been
   deployed**; see [docs/deployment.md](docs/deployment.md).
 - Spending guards: a per-client rate limit on requests that start work, a token limit per
   investigation and a shared daily token budget, all failing closed.
 - HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
-  investigation and its events, queue a re-index, read and cancel jobs; plus `GET /health` and
-  `GET /health/ready`.
+  investigation and its events, queue a re-index, read and cancel jobs, list a repository's
+  issues (paged by cursor) and fetch one; plus `GET /health` and `GET /health/ready`.
   Anonymous callers see only the public demo repository; in production, asking questions needs sign-in.
 - Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
   listings with real line numbers, what was not settled, and every step the investigation took.
@@ -85,7 +92,8 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, a telemetry backend with dashboards or alerts, a deployment
+Not implemented: issue-to-plan (issues can be read, but nothing makes a plan from one and no
+page shows them), a telemetry backend with dashboards or alerts, a deployment
 pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
@@ -134,6 +142,15 @@ curl -s localhost:5120/api/v1/investigations -H 'Content-Type: application/json'
 
 The response is `202` with a queued investigation; fetch `/api/v1/investigations/<investigationId>`
 until its `state` is `completed`.
+
+List the demo repository's issues and fetch one (they are invented, read from
+`tests/fixtures/sample-repo.issues/`; no GitHub call is made):
+
+```sh
+id=$(curl -s localhost:5120/api/v1/repositories | jq -r '.[0].id')
+curl -s "localhost:5120/api/v1/repositories/$id/issues?limit=3" | jq     # { items, nextCursor }
+curl -s "localhost:5120/api/v1/repositories/$id/issues/3" | jq           # body, comments, truncation flags
+```
 
 The answer comes from the extractive fake model: it lists matching passages as evidence and
 says so; it is not a model-written explanation.
@@ -276,6 +293,7 @@ src/Trace.Worker/          Background jobs
 src/Trace.Contracts/       Shared API DTOs
 tests/                     Unit, integration and security tests
 tests/fixtures/sample-repo Synthetic repository that TRACE indexes (not built or run)
+tests/fixtures/sample-repo.issues  Invented issues for it (not indexed)
 tools/Trace.Evals/         Evaluation runner (command line; not deployed)
 infra/                     Local Docker Compose
 docs/                      Handoff, ADRs, evaluation, open questions

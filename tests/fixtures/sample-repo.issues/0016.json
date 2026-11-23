@@ -1,0 +1,20 @@
+{
+  "number": 16,
+  "title": "Allow a page size above 100 for exports",
+  "state": "open",
+  "author": "robin-fixture",
+  "labels": [
+    "enhancement"
+  ],
+  "createdAt": "2026-10-20T09:00:00Z",
+  "updatedAt": "2026-10-21T10:15:00Z",
+  "body": "Our export script wants 500 tasks per request, but the API refuses any `pageSize` above 100.\n\nCould the cap be raised, or made configurable per client? The README mentions a `Paging:MaxPageSize` setting, but changing it did not change the limit for us.",
+  "comments": [
+    {
+      "id": 16001,
+      "author": "dana-fixture",
+      "createdAt": "2026-10-21T10:15:00Z",
+      "body": "There is an ADR about why the cap exists. Please read it before proposing a number; the answer may be paging in the export script instead."
+    }
+  ]
+}

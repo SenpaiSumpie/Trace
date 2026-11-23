@@ -6,11 +6,13 @@ using Microsoft.Extensions.Hosting;
 using Trace.Application.Access;
 using Trace.Application.Indexing;
 using Trace.Application.Investigations;
+using Trace.Application.Issues;
 using Trace.Application.Jobs;
 using Trace.Application.Retrieval;
 using Trace.Infrastructure.Chat;
 using Trace.Infrastructure.Embeddings;
 using Trace.Infrastructure.GitHub;
+using Trace.Infrastructure.Issues;
 using Trace.Infrastructure.Jobs;
 using Trace.Infrastructure.Persistence;
 
@@ -24,6 +26,9 @@ public static class InfrastructureServiceCollectionExtensions
 
     /// <summary>Directory of the demo fixture repository; relative paths resolve against the content root.</summary>
     public const string DemoFixturePathKey = "Demo:FixturePath";
+
+    /// <summary>Directory of the demo repository's fixture issues (one JSON file each); relative paths resolve against the content root.</summary>
+    public const string DemoIssuesPathKey = "Demo:IssuesPath";
 
     public const string EmbeddingProviderKey = "Embeddings:Provider";
     public const string ChatProviderKey = "Chat:Provider";
@@ -63,6 +68,8 @@ public static class InfrastructureServiceCollectionExtensions
             provider.GetRequiredService<TimeProvider>()));
         services.AddScoped<GitHubSignIn>();
         services.AddScoped<GitHubWebhooks>();
+        services.AddScoped<IIssueSourceResolver, ConfiguredIssueSourceResolver>();
+        services.AddScoped<IssueReader>();
 
         services.TryAddSingleton(new JobOptions());
         services.AddSingleton<IJobSignal, JobSignal>();

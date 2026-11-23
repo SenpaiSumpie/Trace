@@ -8,7 +8,7 @@ namespace Trace.Application.Telemetry;
 /// The spans and measurements TRACE records about its own work.
 /// <para>
 /// Nothing recorded here may contain source code, questions, search queries, model output,
-/// file contents, tokens or keys. Spans carry identifiers, counts, durations and fixed
+/// file contents, issue titles, bodies or comments, tokens or keys. Spans carry identifiers, counts, durations and fixed
 /// outcome names only.
 /// </para>
 /// </summary>
@@ -47,6 +47,9 @@ public static partial class TraceTelemetry
 
     public static readonly Histogram<double> IndexDuration =
         Meter.CreateHistogram<double>("trace.index.duration", "s", "Duration of indexing one snapshot.");
+
+    public static readonly Histogram<double> IssueReadDuration =
+        Meter.CreateHistogram<double>("trace.issues.read.duration", "s", "Duration of listing or fetching issues, by source and outcome.");
 
     public static readonly Counter<long> ModelTokens =
         Meter.CreateCounter<long>("trace.model.tokens", "{token}", "Chat model tokens used, by direction.");

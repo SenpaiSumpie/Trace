@@ -1,0 +1,14 @@
+{
+  "number": 11,
+  "title": "Tell an operator when the report worker is stuck",
+  "state": "open",
+  "author": "sam-fixture",
+  "labels": [
+    "enhancement",
+    "operations"
+  ],
+  "createdAt": "2026-10-01T10:00:00Z",
+  "updatedAt": "2026-10-01T10:00:00Z",
+  "body": "`GET /health` stays green when the report worker has stopped making progress, so nothing alerts anyone. docs/operations.md says as much.\n\nProposal: a second probe, or a field on the existing one, that reports how long the oldest queued report has been waiting.\n\nOpen question: should a stuck worker make the load balancer take the instance out of rotation? Probably not, since task requests still work.",
+  "comments": []
+}

@@ -20,7 +20,10 @@ list): `docs/open-questions.md`.
 - `tests/Trace.UnitTests`, `tests/Trace.IntegrationTests` (real PostgreSQL through
   Testcontainers; Docker must be running), `tests/Trace.SecurityTests`
 - `tests/fixtures/sample-repo` — the synthetic repository used for tests and evaluation;
-  `tests/fixtures/sample-repo.questions.json` — its labeled questions
+  `tests/fixtures/sample-repo.questions.json` — its labeled questions;
+  `tests/fixtures/sample-repo.issues/` — its invented issues, served for the demo repository.
+  They sit next to the fixture, not inside it: everything inside is indexed and changes the
+  revision the evaluation baseline is pinned to
 - `tools/Trace.Evals` — the evaluation tool (`docs/evaluation.md`): `run` asks a dataset's
   questions, `report` computes the metrics of a result file, `compare` diffs two, `check` fails
   when a result file does not meet an expectations file (CI runs it on the smoke subset

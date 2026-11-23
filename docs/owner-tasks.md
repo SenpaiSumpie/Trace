@@ -36,6 +36,7 @@ GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App*
   | Request user authorization (OAuth) during installation | Off |
   | Webhook → Active | **Off** (GitHub cannot reach your machine) |
   | Repository permissions → Contents | Read-only |
+  | Repository permissions → Issues | Read-only |
   | Repository permissions → Metadata | Read-only |
   | Everything else | No access |
   | Where can this app be installed? | Only on this account |
@@ -112,6 +113,27 @@ for this run, or index it again the same way before asking it anything.
 - Any error text from the API window or the browser.
 - How good the answer and its evidence were.
 - The rough cost and time of one question.
+
+## Part 4b: let TRACE read issues (about 3 minutes)
+
+Only needed if your GitHub App was created before "Issues: Read-only" was in the table of
+part 2. Until you do this, listing and fetching issues of your repositories answers 409
+`issues_permission_missing`; everything else keeps working.
+
+- [ ] Add the permission to the app: GitHub → Settings → Developer settings → GitHub Apps →
+      **Edit** next to your app → **Permissions & events** → Repository permissions →
+      **Issues** → **Read-only** → **Save changes**.
+- [ ] Accept it on your installation: GitHub → Settings → Applications → Installed GitHub
+      Apps → **Configure** next to the app → **Review request** in the banner → **Accept new
+      permissions**.
+- [ ] Check it: start TRACE as in part 3, sign in, and open
+      `http://localhost:5173/api/v1/repositories` and then
+      `http://localhost:5173/api/v1/repositories/<id of your repository>/issues` in the same
+      browser. You should see your open issues as JSON.
+
+This path has never been run against real GitHub issues, so bring back whatever the second
+address answers if it is not a list. The details are in
+[github-app-setup.md](github-app-setup.md#adding-the-issues-permission-to-an-existing-app).
 
 ## Part 5: Azure (optional, costs money)
 

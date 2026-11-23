@@ -1,0 +1,26 @@
+{
+  "number": 3,
+  "title": "First page of the task list skips the oldest tasks",
+  "state": "open",
+  "author": "dana-fixture",
+  "labels": [
+    "bug"
+  ],
+  "createdAt": "2026-09-02T09:15:00Z",
+  "updatedAt": "2026-09-03T14:40:00Z",
+  "body": "With 25 tasks in the board, `GET /tasks?page=1&pageSize=20` returns tasks 21 to 25 instead of tasks 1 to 20, and `page=2` returns nothing.\n\nThe README says pages are 1-based and the list is oldest first, so page 1 should start at the first task.\n\n### Steps\n\n1. Create 25 tasks.\n2. Request `/tasks?page=1&pageSize=20`.\n\n### Expected\n\nTasks 1 to 20, and a second page with tasks 21 to 25.\n\n### Actual\n\nFive tasks on page 1, none on page 2. The total count in the response is still 25.",
+  "comments": [
+    {
+      "id": 3001,
+      "author": "lee-fixture",
+      "createdAt": "2026-09-02T11:02:00Z",
+      "body": "I can reproduce it. The web client hides it a little because it only ever asks for page 1, so the list just looks short."
+    },
+    {
+      "id": 3002,
+      "author": "dana-fixture",
+      "createdAt": "2026-09-03T14:40:00Z",
+      "body": "Whoever fixes this: please add a test for page 1 and for the last page. The existing page tests only check validation."
+    }
+  ]
+}

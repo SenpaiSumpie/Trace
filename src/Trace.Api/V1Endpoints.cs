@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Trace.Application.Investigations;
+using Trace.Application.Issues;
 using Trace.Application.Jobs;
 using Trace.Contracts.V1;
 using Trace.Domain;
@@ -11,7 +12,7 @@ namespace Trace.Api;
 /// for everyone, and GitHub repositories only for a signed-in user with access. Anything else
 /// answers 404, so its existence is not revealed.
 /// </summary>
-internal static class V1Endpoints
+internal static partial class V1Endpoints
 {
     public const string WriteRateLimit = "writes";
 
@@ -26,6 +27,8 @@ internal static class V1Endpoints
         v1.MapGet("/investigations/{id:guid}", GetInvestigationAsync).WithName(nameof(GetInvestigationAsync));
         v1.MapGet("/investigations/{id:guid}/events", GetInvestigationEventsAsync);
         v1.MapPost("/repositories/{id:guid}/index-jobs", CreateIndexJobAsync).RequireRateLimiting(WriteRateLimit).RequireSignIn();
+        v1.MapGet("/repositories/{id:guid}/issues", ListIssuesAsync);
+        v1.MapGet("/repositories/{id:guid}/issues/{number:int:min(1)}", GetIssueAsync);
         v1.MapGet("/jobs/{id:guid}", GetJobAsync).WithName(nameof(GetJobAsync));
         v1.MapPost("/jobs/{id:guid}/cancel", CancelJobAsync).RequireSignIn();
     }
@@ -137,6 +140,112 @@ internal static class V1Endpoints
         await jobs.CancelAsync(id, cancellationToken) is { } job
             ? TypedResults.Accepted((string?)null, ToResponse(job))
             : TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
+
+    /// <summary>
+    /// Open issues of a repository the caller can see, newest first, without bodies. Paged by
+    /// cursor: <c>limit</c> (1 to 100, default 30) and the <c>cursor</c> of the previous page.
+    /// </summary>
+    private static async Task<IResult> ListIssuesAsync(
+        Guid id,
+        int? limit,
+        string? cursor,
+        IssueReader issues,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        if (limit is < 1 or > IssueLimits.MaxPageSize)
+        {
+            return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["limit"] = [$"limit must be 1 to {IssueLimits.MaxPageSize}."],
+            });
+        }
+
+        try
+        {
+            var page = await issues.ListOpenAsync(id, limit ?? IssueLimits.DefaultPageSize, cursor, cancellationToken);
+            return TypedResults.Ok(new IssueListResponse([.. page.Items.Select(ToResponse)], page.NextCursor));
+        }
+        catch (IssueReadException exception)
+        {
+            return IssueProblem(exception, id, loggers);
+        }
+    }
+
+    /// <summary>One issue with its body and first comments, cut to the size limits and flagged where cut.</summary>
+    private static async Task<IResult> GetIssueAsync(
+        Guid id,
+        int number,
+        IssueReader issues,
+        ILoggerFactory loggers,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var issue = await issues.GetAsync(id, number, cancellationToken);
+            var summary = issue.Summary;
+            return TypedResults.Ok(new IssueResponse(
+                summary.Number,
+                summary.Title,
+                summary.State,
+                summary.Author,
+                summary.Labels,
+                issue.Body,
+                issue.BodyTruncated,
+                summary.CommentCount,
+                [.. issue.Comments.Select(c => new IssueCommentResponse(c.Id, c.Author, c.Body, c.BodyTruncated, c.CreatedAt))],
+                issue.CommentsTruncated,
+                summary.CreatedAt,
+                summary.UpdatedAt));
+        }
+        catch (IssueReadException exception)
+        {
+            return IssueProblem(exception, id, loggers);
+        }
+    }
+
+    /// <summary>
+    /// Every way reading issues can fail has its own status and a fixed <c>code</c>. A repository
+    /// the caller cannot see is a plain 404, the same as everywhere else. The log line carries
+    /// the repository ID and the code only.
+    /// </summary>
+    private static IResult IssueProblem(IssueReadException exception, Guid repositoryId, ILoggerFactory loggers)
+    {
+        var (status, detail) = exception.Error switch
+        {
+            IssueReadError.RepositoryNotFound => (StatusCodes.Status404NotFound, (string?)null),
+            IssueReadError.IssueNotFound => (StatusCodes.Status404NotFound, "This repository has no issue with that number. Pull requests are not issues."),
+            IssueReadError.InvalidCursor => (StatusCodes.Status400BadRequest, "The cursor is not one this API returned."),
+            IssueReadError.IssuesPermissionMissing => (
+                StatusCodes.Status409Conflict,
+                "The GitHub App installation for this repository has not granted read access to issues. Its owner must accept the app's updated permissions on GitHub."),
+            IssueReadError.IssuesDisabled => (StatusCodes.Status409Conflict, "Issues are switched off for this repository on GitHub."),
+            IssueReadError.IssuesUnavailable => (StatusCodes.Status409Conflict, "This repository has no source of issues."),
+            IssueReadError.GitHubRateLimited => (StatusCodes.Status503ServiceUnavailable, "GitHub is limiting requests right now. Try again later."),
+            _ => (StatusCodes.Status502BadGateway, "GitHub did not return the issues. Try again."),
+        };
+
+        if (exception.Error == IssueReadError.RepositoryNotFound)
+        {
+            return TypedResults.Problem(statusCode: status);
+        }
+
+        if (status >= StatusCodes.Status409Conflict)
+        {
+            IssueReadFailed(loggers.CreateLogger(typeof(V1Endpoints).FullName!), repositoryId, exception.Code);
+        }
+
+        return TypedResults.Problem(
+            detail: detail,
+            statusCode: status,
+            extensions: new Dictionary<string, object?> { ["code"] = exception.Code });
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Issues of repository {RepositoryId} could not be read: {Code}")]
+    private static partial void IssueReadFailed(ILogger logger, Guid repositoryId, string code);
+
+    private static IssueSummaryResponse ToResponse(IssueSummary issue) =>
+        new(issue.Number, issue.Title, issue.State, issue.Author, issue.Labels, issue.CommentCount, issue.CreatedAt, issue.UpdatedAt);
 
     private static JobResponse ToResponse(Job job) =>
         new(

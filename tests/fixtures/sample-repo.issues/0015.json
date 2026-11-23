@@ -1,0 +1,12 @@
+{
+  "number": 15,
+  "title": "Raise the default page size to 50",
+  "state": "open",
+  "author": "sam-fixture",
+  "labels": [],
+  "createdAt": "2026-10-14T15:45:00Z",
+  "updatedAt": "2026-10-14T15:45:00Z",
+  "pullRequest": true,
+  "body": "A pull request, not an issue: it stands for the pull requests GitHub lists among issues, which TRACE leaves out.",
+  "comments": []
+}

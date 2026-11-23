@@ -34,16 +34,66 @@ public sealed record GitHubUserInstallation(long InstallationId, string AccountL
 
 public sealed record GitHubTreeEntry(string Path, string Mode, string Type, string Sha, long? Size);
 
-public sealed class GitHubApiException(string message, Exception? innerException = null) : Exception(message, innerException);
+public sealed class GitHubApiException(string message, Exception? innerException = null) : Exception(message, innerException)
+{
+    /// <summary>The HTTP status GitHub answered with, when it answered.</summary>
+    public int? Status { get; init; }
+
+    /// <summary>GitHub refused because a rate limit was reached, not because access is missing.</summary>
+    public bool RateLimited { get; init; }
+
+    /// <summary>GitHub answered from another address than the one asked (a moved repository or issue).</summary>
+    public bool Redirected { get; init; }
+}
+
+/// <summary>What an installation token is asked to allow. Always read-only, always one repository.</summary>
+public enum GitHubTokenScope
+{
+    /// <summary>Contents and metadata: reading source for indexing.</summary>
+    Contents,
+
+    /// <summary>Issues and metadata: listing and fetching issues.</summary>
+    Issues,
+}
+
+/// <param name="IsPullRequest">GitHub's issue endpoints also return pull requests; TRACE leaves them out.</param>
+public sealed record GitHubIssue(
+    int Number,
+    string? Title,
+    string? State,
+    string? Author,
+    IReadOnlyList<string?> Labels,
+    string? Body,
+    int CommentCount,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    bool IsPullRequest);
+
+public sealed record GitHubIssueComment(long Id, string? Author, string? Body, DateTimeOffset CreatedAt);
 
 /// <summary>
 /// The few GitHub REST calls TRACE makes. Read-only: sign-in, listing what a user can access
-/// through the app, and reading repository content with a short-lived installation token that
-/// is requested with read permissions for one repository. No token is ever stored or logged.
+/// through the app, and reading repository content and issues with a short-lived installation
+/// token that is requested with read permissions for one repository. No token is ever stored
+/// or logged.
+/// <para>
+/// The only two POST requests are the ones GitHub's own authentication requires (exchanging
+/// the sign-in code, and asking for an installation token). Everything else is a GET; nothing
+/// here can create, edit, close or comment on an issue, and a test reads this file to keep it so.
+/// </para>
 /// </summary>
 public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimeProvider timeProvider)
 {
     public const string HttpClientName = "github";
+
+    /// <summary>Issues asked of GitHub per list request.</summary>
+    public const int IssuePageSize = 50;
+
+    /// <summary>
+    /// The most bytes of one issue response that are read. An issue body is at most 65,536
+    /// characters on GitHub, so a full page stays below this; anything larger is refused.
+    /// </summary>
+    public const int MaxIssueResponseBytes = 8 * 1024 * 1024;
 
     private const int PageSize = 100;
     private const int MaxPages = 20;
@@ -115,12 +165,23 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
         return result;
     }
 
-    /// <summary>A token valid for about an hour, limited to reading one repository's contents and metadata.</summary>
+    /// <summary>
+    /// A token valid for about an hour, limited to one repository and to reading either its
+    /// contents or its issues (plus metadata). GitHub refuses the request (422) when the
+    /// installation has not been granted a permission that is asked for.
+    /// </summary>
     public async Task<string> CreateInstallationTokenAsync(
         long installationId,
         long repositoryId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        GitHubTokenScope scope = GitHubTokenScope.Contents)
     {
+        var permissions = new Dictionary<string, string>
+        {
+            [scope == GitHubTokenScope.Issues ? "issues" : "contents"] = "read",
+            ["metadata"] = "read",
+        };
+
         using var request = new HttpRequestMessage(
             HttpMethod.Post, new Uri(options.ApiBaseUrl, $"app/installations/{installationId}/access_tokens"))
         {
@@ -128,7 +189,7 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
                 new
                 {
                     repository_ids = new[] { repositoryId },
-                    permissions = new { contents = "read", metadata = "read" },
+                    permissions,
                 }),
         };
         Authorize(request, CreateAppJwt());
@@ -164,6 +225,125 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
         return blob.Encoding == "base64" && blob.Content is not null
             ? Convert.FromBase64String(blob.Content)
             : throw new GitHubApiException("GitHub returned a blob in an unexpected encoding.");
+    }
+
+    /// <summary>
+    /// One page of a repository's open issues, newest first, exactly as GitHub lists them:
+    /// pull requests included and marked. Fewer than <see cref="IssuePageSize"/> entries means
+    /// it was the last page.
+    /// </summary>
+    public async Task<IReadOnlyList<GitHubIssue>> ListOpenIssuesPageAsync(
+        string token, string owner, string name, int page, CancellationToken cancellationToken = default)
+    {
+        var issues = await GetBoundedAsync<List<IssueResponse>>(
+            $"repos/{Segment(owner)}/{Segment(name)}/issues?state=open&sort=created&direction=desc&per_page={IssuePageSize}&page={page}",
+            token,
+            cancellationToken);
+        return [.. issues.Select(ToIssue)];
+    }
+
+    public async Task<GitHubIssue> GetIssueAsync(
+        string token, string owner, string name, int number, CancellationToken cancellationToken = default) =>
+        ToIssue(await GetBoundedAsync<IssueResponse>(
+            $"repos/{Segment(owner)}/{Segment(name)}/issues/{number}", token, cancellationToken));
+
+    /// <summary>The first <paramref name="limit"/> comments of an issue, oldest first.</summary>
+    public async Task<IReadOnlyList<GitHubIssueComment>> ListIssueCommentsAsync(
+        string token, string owner, string name, int number, int limit, CancellationToken cancellationToken = default)
+    {
+        var comments = await GetBoundedAsync<List<CommentResponse>>(
+            $"repos/{Segment(owner)}/{Segment(name)}/issues/{number}/comments?per_page={limit}&page=1", token, cancellationToken);
+        return [.. comments.Take(limit).Select(c => new GitHubIssueComment(c.Id, c.User?.Login, c.Body, c.CreatedAt))];
+    }
+
+    /// <summary>Whether issues are switched on for the repository (its <c>has_issues</c> setting).</summary>
+    public async Task<bool> HasIssuesEnabledAsync(
+        string token, string owner, string name, CancellationToken cancellationToken = default) =>
+        (await GetBoundedAsync<RepositorySettingsResponse>(
+            $"repos/{Segment(owner)}/{Segment(name)}", token, cancellationToken)).HasIssues;
+
+    private static GitHubIssue ToIssue(IssueResponse issue) =>
+        new(
+            issue.Number,
+            issue.Title,
+            issue.State,
+            issue.User?.Login,
+            [.. (issue.Labels ?? []).Select(label => label.Name)],
+            issue.Body,
+            issue.Comments,
+            issue.CreatedAt,
+            issue.UpdatedAt,
+            issue.PullRequest is not null);
+
+    /// <summary>
+    /// A GET whose answer is read only up to <see cref="MaxIssueResponseBytes"/> and only if it
+    /// came from the address that was asked. GitHub redirects a moved issue to its new
+    /// repository, which this installation token was not issued for and the caller was not
+    /// checked against, so a redirect is an error here whether or not it was followed.
+    /// </summary>
+    private async Task<T> GetBoundedAsync<T>(string path, string token, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(options.ApiBaseUrl, path));
+        Authorize(request, token);
+        var asked = request.RequestUri;
+        try
+        {
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            var status = (int)response.StatusCode;
+            if (status is >= 300 and < 400
+                || (response.RequestMessage?.RequestUri is { } answeredFrom && answeredFrom != asked))
+            {
+                throw new GitHubApiException($"GitHub redirected GET {asked?.AbsolutePath}.") { Status = status, Redirected = true };
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw Failure(request, response);
+            }
+
+            await using var body = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var buffer = new MemoryStream();
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await body.ReadAsync(chunk, cancellationToken)) > 0)
+            {
+                if (buffer.Length + read > MaxIssueResponseBytes)
+                {
+                    throw new GitHubApiException($"GitHub returned more than {MaxIssueResponseBytes} bytes for GET {asked?.AbsolutePath}.");
+                }
+
+                buffer.Write(chunk, 0, read);
+            }
+
+            return JsonSerializer.Deserialize<T>(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), Json)
+                ?? throw new GitHubApiException("GitHub returned an empty response.");
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new GitHubApiException("GitHub could not be reached.", exception);
+        }
+        catch (JsonException exception)
+        {
+            throw new GitHubApiException("GitHub returned a response that could not be read.", exception);
+        }
+    }
+
+    /// <summary>Neither the token nor the response body goes into the message.</summary>
+    private static GitHubApiException Failure(HttpRequestMessage request, HttpResponseMessage response)
+    {
+        var status = (int)response.StatusCode;
+
+        // GitHub reports an exhausted rate limit as 429, or as 403 with one of these headers.
+        var rateLimited = status == 429
+            || (status == 403
+                && (response.Headers.Contains("Retry-After")
+                    || (response.Headers.TryGetValues("X-RateLimit-Remaining", out var remaining) && remaining.FirstOrDefault() == "0")));
+
+        return new GitHubApiException($"GitHub returned {status} for {request.Method} {request.RequestUri?.AbsolutePath}.")
+        {
+            Status = status,
+            RateLimited = rateLimited,
+        };
     }
 
     /// <summary>A short-lived JWT proving we are the app, signed with its private key (RS256).</summary>
@@ -230,8 +410,7 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
             using var response = await http.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                // Neither the URL's token nor the response body goes into the message.
-                throw new GitHubApiException($"GitHub returned {(int)response.StatusCode} for {request.Method} {request.RequestUri?.AbsolutePath}.");
+                throw Failure(request, response);
             }
 
             return await response.Content.ReadFromJsonAsync<T>(Json, cancellationToken)
@@ -276,4 +455,24 @@ public sealed class GitHubClient(HttpClient http, GitHubOptions options, TimePro
     private sealed record TreeResponse(IReadOnlyList<TreeEntryResponse>? Tree, bool Truncated);
 
     private sealed record BlobResponse(string? Content, string? Encoding);
+
+    private sealed record LabelResponse(string? Name);
+
+    private sealed record PullRequestMarker(string? Url);
+
+    private sealed record IssueResponse(
+        int Number,
+        string? Title,
+        string? State,
+        AccountResponse? User,
+        IReadOnlyList<LabelResponse>? Labels,
+        string? Body,
+        int Comments,
+        DateTimeOffset CreatedAt,
+        DateTimeOffset UpdatedAt,
+        PullRequestMarker? PullRequest);
+
+    private sealed record CommentResponse(long Id, AccountResponse? User, string? Body, DateTimeOffset CreatedAt);
+
+    private sealed record RepositorySettingsResponse(bool HasIssues = true);
 }

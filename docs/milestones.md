@@ -11,7 +11,7 @@ is finished when every box under "Done when" is ticked, and not before.
 |---|---|---|
 | M0 | Working slice | Done |
 | M1 | Measured answers | Next |
-| M2 | Issue to plan | Not started |
+| M2 | Issue to plan | Started (step 1 of 6) |
 | M3 | A product you can use daily | Not started |
 | M4 | Safe to put online | Not started |
 | M5 | Live on Azure, with a demo | Not started; needs the Azure gate |
@@ -89,6 +89,14 @@ Done when:
 
 - [ ] The GitHub App asks for read-only access to issues, and TRACE can list and fetch them
       for a repository the user can see (you will need to approve the new permission)
+      (**not ticked yet.** Built: `GET /api/v1/repositories/{id}/issues` and
+      `.../issues/{number}`, paged, size-limited, 404 for a repository the caller cannot see,
+      GET requests only, fixture issues for the demo repository
+      ([ADR-015](adr/ADR-015-reading-github-issues.md)). What remains is yours: add "Issues:
+      Read-only" to the GitHub App and accept it on your installation
+      ([how](github-app-setup.md#adding-the-issues-permission-to-an-existing-app)), then list
+      and fetch the issues of one real repository. It has never been run against real GitHub
+      issues; until it has, this box stays open)
 - [ ] An issue-to-plan investigation produces a structured plan: steps, files to change,
       risks, how to verify, and what is unknown, each tied to cited source lines
 - [ ] Issue text is treated as untrusted, like source: tests show it cannot add tools,

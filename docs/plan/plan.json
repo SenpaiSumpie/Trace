@@ -162,8 +162,16 @@
         "Owner actions list: review the draft labels and rerun",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T21:27:08.648Z"
+      "status": "done",
+      "startedAt": "2026-11-23T21:27:08.648Z",
+      "finishedAt": "2026-11-23T21:48:44.546Z",
+      "evidence": "Commit 517a1d5 \"feat(evals): evaluate a snapshot the application already indexed\" pushed to main; CI run 45272701641 concluded success (backend, web, e2e, eval-smoke, deployment-artifacts). Supervisor verification: `git log -1 --oneline` shows 517a1d5; `git status --short` empty, main in sync with origin/main; `gh run list --limit 1` shows headSha 517a1d53 completed/success; `git check-ignore` confirms the dataset under eval/local/ is ignored and `git ls-files eval` lists 0 tracked files; my own leak check searched `git show HEAD` and the commit message for all 564 strings in the private list, case-insensitive substring: 1 hit, a five-letter word from the list that matches inside the ordinary English word \"subscription\" in the README, so a false positive and not a leak; `git grep -l -i` for the private repository's name over the whole tree gives 0 files and `git log --all -S` for it gives 0 commits; the dataset parsed by me has 19 questions, 4 unanswerable; 0 trace_eval_* databases remain. Subagent evidence: new `run --snapshot <id>` mode copies one completed snapshot into the throwaway database over read-only connections and runs the production QuestionInvestigator unchanged; 5 fixture-only integration tests in EvalSnapshotRunTests (success, authorization, prompt injection, failure, read-only refusal); development database row counts and latest updated_at for 9 tables identical before and after. docs/evaluation.md section \"A private repository\" covers create, run, compare and the pre-commit check; ADR-014. Private baseline exists under eval/local/private-1/ (dataset, report, raw result): 19 questions (15 answerable, 4 unanswerable; dev 10, held-out 9); 13 answered, 5 abstained, 1 failed; citation validity 69 of 69; recall at 10 16 of 16; held-out targets met on draft labels. Real-model questions: 1 probe + 19 = 20 of 40; estimated $1.58 of the $10 stop; no budget setting overridden. dotnet build 0 warnings; tests unit 274, security 21, integration 238, 0 failed; dotnet format --verify-no-changes exit 0. Committed docs state only that the private baseline exists, its date and question counts.",
+      "deferred": "Nothing stubbed. Limits: the labels are drafts written by an agent that does not know the code, from a partial reading (the three largest files, over half the indexed text, have no questions), and await the owner's review; one correct answer rests on a second valid location the draft label missed. Two pipeline misses were found and not tuned: an easy answerable question ended as \"not enough evidence\" at the 6-turn limit, and one question failed with invalid_model_output; one abstention on an unanswerable question was also reached by hitting the step limit. One run, so variation is unknown; prices unconfirmed. The baseline ran on an uncommitted working tree (this step's changes on top of fbbea49). run --snapshot has been used for real on one snapshot only, and a source database at an older schema version is untested. The PowerShell rerun commands were not executed as written. No command lists snapshots (the docs give a SQL query); no resume or merge of partial runs.",
+      "ownerActions": [
+        "Review the draft labels in eval/local/private-1/private-1.questions.json using the Review section of eval/local/private-1/notes.md, correct them, set a new datasetVersion, then rerun the baseline with the commands at the end of eval/local/private-1/2026-11-23-private-1-baseline.md (about $1.50) and compare against the first result.",
+        "Back up eval/local/ somewhere private; it is not in git, so a push does not save it.",
+        "Decide whether the two pipeline misses on the private baseline matter (an easy question that ran out of steps, and one invalid_model_output failure); a repeat run would show whether they recur."
+      ]
     },
     {
       "id": "M2.1",
@@ -179,7 +187,8 @@
         "Stated plainly: never run against real GitHub issues",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T21:48:52.326Z"
     },
     {
       "id": "M2.2",

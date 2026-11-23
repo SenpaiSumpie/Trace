@@ -84,6 +84,46 @@ public sealed record JobResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
+/// <summary>An issue as it appears in a list: no body. Every text field is untrusted content.</summary>
+/// <param name="State"><c>open</c> or <c>closed</c>.</param>
+/// <param name="Author">The login of whoever opened it, when known.</param>
+public sealed record IssueSummaryResponse(
+    int Number,
+    string Title,
+    string State,
+    string? Author,
+    IReadOnlyList<string> Labels,
+    int CommentCount,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>
+/// One page of a list. Pass <paramref name="NextCursor"/> back as <c>cursor</c> to get the
+/// next page; null means there is none. A page may hold fewer items than the limit asked for.
+/// </summary>
+public sealed record IssueListResponse(IReadOnlyList<IssueSummaryResponse> Items, string? NextCursor);
+
+/// <param name="BodyTruncated">The comment was longer than the limit and has been cut.</param>
+public sealed record IssueCommentResponse(long Id, string? Author, string Body, bool BodyTruncated, DateTimeOffset CreatedAt);
+
+/// <summary>One issue with its first comments, oldest first. Every text field is untrusted content.</summary>
+/// <param name="BodyTruncated">The body was longer than the limit and has been cut.</param>
+/// <param name="CommentCount">How many comments the issue has, which can be more than are returned.</param>
+/// <param name="CommentsTruncated">True when the issue has comments that are not in <paramref name="Comments"/>.</param>
+public sealed record IssueResponse(
+    int Number,
+    string Title,
+    string State,
+    string? Author,
+    IReadOnlyList<string> Labels,
+    string Body,
+    bool BodyTruncated,
+    int CommentCount,
+    IReadOnlyList<IssueCommentResponse> Comments,
+    bool CommentsTruncated,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
 public sealed record UserResponse(string Login);
 
 /// <param name="User">The signed-in user, or null when anonymous.</param>

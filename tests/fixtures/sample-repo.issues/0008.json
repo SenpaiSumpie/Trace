@@ -1,0 +1,20 @@
+{
+  "number": 8,
+  "title": "Shutdown waits for a report that is being generated",
+  "state": "open",
+  "author": "dana-fixture",
+  "labels": [
+    "bug"
+  ],
+  "createdAt": "2026-09-18T16:05:00Z",
+  "updatedAt": "2026-09-19T07:55:00Z",
+  "body": "Stopping the API while a report is being generated takes several seconds longer than it should, and the host sometimes logs that the background service did not stop in time.\n\nIt looks as if report generation does not notice that the application is stopping. Reports that are still queued are lost on restart anyway (see docs/operations.md), so there is nothing to gain from finishing the one in progress.",
+  "comments": [
+    {
+      "id": 8001,
+      "author": "sam-fixture",
+      "createdAt": "2026-09-19T07:55:00Z",
+      "body": "Seen in the staging instance too. A fix should come with a test that cancels during generation."
+    }
+  ]
+}

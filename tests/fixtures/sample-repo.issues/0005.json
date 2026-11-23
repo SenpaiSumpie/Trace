@@ -1,0 +1,14 @@
+{
+  "number": 5,
+  "title": "Requests to paths that merely contain /health skip the API key check",
+  "state": "open",
+  "author": "lee-fixture",
+  "labels": [
+    "bug",
+    "security"
+  ],
+  "createdAt": "2026-09-10T08:30:00Z",
+  "updatedAt": "2026-09-10T08:30:00Z",
+  "body": "The README says every endpoint except `/health` needs the `X-Api-Key` header. In practice any path that has `/health` somewhere in it is let through without a key.\n\nOnly the exact health probe should be exempt. Nothing else is routed under such a path today, so this is not exploitable yet, but the next endpoint someone adds under a path like that would be public by accident.",
+  "comments": []
+}

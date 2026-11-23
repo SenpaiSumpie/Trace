@@ -1,0 +1,20 @@
+{
+  "number": 12,
+  "title": "Webhook retries hammered a receiver that was down",
+  "state": "closed",
+  "author": "lee-fixture",
+  "labels": [
+    "question"
+  ],
+  "createdAt": "2026-10-05T13:20:00Z",
+  "updatedAt": "2026-10-06T09:10:00Z",
+  "body": "A receiver reported three calls within a few seconds for one completed task. Is that intended?",
+  "comments": [
+    {
+      "id": 12001,
+      "author": "dana-fixture",
+      "createdAt": "2026-10-06T09:10:00Z",
+      "body": "Yes: at most three attempts with a short doubling wait between them, then it gives up and logs a warning. Closing."
+    }
+  ]
+}

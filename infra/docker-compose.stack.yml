@@ -40,10 +40,12 @@ services:
     environment:
       <<: *app-environment
       Database__SeedDemoData: "true"
+      Demo__IssuesPath: /fixtures/sample-repo.issues
       Auth__AllowAnonymousWrites: "true"
       Proxy__TrustForwardedHeaders: "true"
     volumes:
       - ../tests/fixtures/sample-repo:/fixtures/sample-repo:ro
+      - ../tests/fixtures/sample-repo.issues:/fixtures/sample-repo.issues:ro
     depends_on:
       migrate: { condition: service_completed_successfully }
 

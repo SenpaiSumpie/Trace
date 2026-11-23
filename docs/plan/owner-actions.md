@@ -43,3 +43,11 @@ The final step (M6.4) turns this into the owner checklist.
 - [ ] Keep the git-ignored file eval/results/sample-repo-20261123T211248Z-7ec219d2.json; it is the raw baseline, and losing it means a new paid run before any question-by-question comparison.
 - [ ] Decide whether the fixture question password-hashing should be relabeled, reworded or dropped; the model's answer was true of the fixture but the label says unanswerable. Any change raises datasetVersion.
 - [ ] Do not use the held-out per-question results, now published in docs/eval/2026-11-23-fixture-baseline.md, for tuning.
+
+### M1.6 Private question set for one real repository
+
+**Deferred:** Nothing stubbed. Limits: the labels are drafts written by an agent that does not know the code, from a partial reading (the three largest files, over half the indexed text, have no questions), and await the owner's review; one correct answer rests on a second valid location the draft label missed. Two pipeline misses were found and not tuned: an easy answerable question ended as "not enough evidence" at the 6-turn limit, and one question failed with invalid_model_output; one abstention on an unanswerable question was also reached by hitting the step limit. One run, so variation is unknown; prices unconfirmed. The baseline ran on an uncommitted working tree (this step's changes on top of fbbea49). run --snapshot has been used for real on one snapshot only, and a source database at an older schema version is untested. The PowerShell rerun commands were not executed as written. No command lists snapshots (the docs give a SQL query); no resume or merge of partial runs.
+
+- [ ] Review the draft labels in eval/local/private-1/private-1.questions.json using the Review section of eval/local/private-1/notes.md, correct them, set a new datasetVersion, then rerun the baseline with the commands at the end of eval/local/private-1/2026-11-23-private-1-baseline.md (about $1.50) and compare against the first result.
+- [ ] Back up eval/local/ somewhere private; it is not in git, so a push does not save it.
+- [ ] Decide whether the two pipeline misses on the private baseline matter (an easy question that ran out of steps, and one invalid_model_output failure); a repeat run would show whether they recur.
