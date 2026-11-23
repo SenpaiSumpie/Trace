@@ -1,0 +1,22 @@
+{
+  "ConnectionStrings": {
+    "Trace": "Host=localhost;Port=54320;Database=trace;Username=trace;Password=local-dev-only-change-me"
+  },
+  "Embeddings": {
+    "Provider": "deterministic-fake"
+  },
+  "Chat": {
+    "Provider": "deterministic-fake"
+  },
+  "Eval": {
+    "QuestionTimeoutSeconds": 600,
+    "Prices": {
+      "fake-extractive-v1": {
+        "InputPerMillion": 0,
+        "OutputPerMillion": 0,
+        "CacheReadPerMillion": 0,
+        "CacheWritePerMillion": 0
+      }
+    }
+  }
+}

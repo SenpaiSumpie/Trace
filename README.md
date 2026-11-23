@@ -56,11 +56,16 @@ line range. The full specification is in
   request through its job, model calls and tool calls
   ([ADR-008](docs/adr/ADR-008-telemetry-and-correlation.md)). **Not yet sent to a real
   collector.**
+- An evaluation runner (`tools/Trace.Evals`): one command puts a dataset of labeled questions
+  through the same investigation pipeline the API uses and writes one result file per run with,
+  per question, the outcome, answer, checked evidence, tool calls, tokens, estimated cost and
+  time ([docs/evaluation.md](docs/evaluation.md), [ADR-009](docs/adr/ADR-009-evaluation-runner.md)).
+  **Only ever run with the fake models on the fixture; no metrics or comparison of runs yet.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, a telemetry backend with dashboards or alerts, a
-deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+Not implemented: issue-to-plan, evaluation metrics and baselines, a telemetry backend with
+dashboards or alerts, a deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).
 The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
@@ -132,6 +137,21 @@ What it costs: on one small repository a question measured about $0.12-$0.14 wit
 `claude-opus-5-5` (two questions, one run each; see row 64 of
 [docs/open-questions.md](docs/open-questions.md)). Each result shows the tokens it used.
 
+## Evaluation
+
+Run the fixture's labeled questions through the investigation pipeline with the fake models
+(needs the database from Local setup; costs nothing):
+
+```sh
+dotnet run --project tools/Trace.Evals -- run --dataset tests/fixtures/sample-repo.questions.json --source tests/fixtures/sample-repo
+```
+
+It indexes the fixture into a database of its own, which it drops afterwards (your development
+data is not touched), and writes `eval/results/sample-repo-<time>-<run id>.json` (git-ignored).
+The dataset format, the result file and every option are in
+[docs/evaluation.md](docs/evaluation.md). With the fake chat model the outcomes show that the
+plumbing works, not that answers are good.
+
 ## Telemetry
 
 Every response carries an `X-Correlation-ID` header (send your own, or one is generated). The
@@ -191,6 +211,7 @@ src/Trace.Worker/          Background jobs
 src/Trace.Contracts/       Shared API DTOs
 tests/                     Unit, integration and security tests
 tests/fixtures/sample-repo Synthetic repository that TRACE indexes (not built or run)
+tools/Trace.Evals/         Evaluation runner (command line; not deployed)
 infra/                     Local Docker Compose
-docs/                      Handoff, ADRs, open questions
+docs/                      Handoff, ADRs, evaluation, open questions
 ```

@@ -16,10 +16,22 @@
     "Say plainly what was not verified. Put throwaway files in the git-ignored tmp/ and delete them when the check has passed."
   ],
   "milestones": [
-    { "id": "M1", "title": "Measured answers" },
-    { "id": "M2", "title": "Issue to plan" },
-    { "id": "M3", "title": "A product you can use daily" },
-    { "id": "M4", "title": "Safe to put online" }
+    {
+      "id": "M1",
+      "title": "Measured answers"
+    },
+    {
+      "id": "M2",
+      "title": "Issue to plan"
+    },
+    {
+      "id": "M3",
+      "title": "A product you can use daily"
+    },
+    {
+      "id": "M4",
+      "title": "Safe to put online"
+    }
   ],
   "steps": [
     {
@@ -35,7 +47,8 @@
         "Result files are written under a git-ignored directory by default",
         "Unit and integration tests cover the runner; all checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T19:57:45.871Z"
     },
     {
       "id": "M1.2",

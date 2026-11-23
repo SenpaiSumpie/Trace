@@ -48,6 +48,8 @@ Done when:
 - [ ] A command runs a set of labeled questions against the real models and stores, per
       question: the answer, evidence, tool calls, tokens, cost and time, with the commit,
       index version, model and prompt version
+      (the command exists and stores all of this, see [evaluation.md](evaluation.md); it has
+      only been run with the fake models, so this box stays open until a real-model run)
 - [ ] The fixture repository has at least 25 labeled questions, split into development and
       held-out sets, including at least 5 that cannot be answered
 - [ ] A second labeled set of at least 15 questions exists for one real repository of yours

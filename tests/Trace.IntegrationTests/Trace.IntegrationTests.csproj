@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trace.Api\Trace.Api.csproj" />
+    <ProjectReference Include="..\..\tools\Trace.Evals\Trace.Evals.csproj" />
   </ItemGroup>
 
   <ItemGroup>

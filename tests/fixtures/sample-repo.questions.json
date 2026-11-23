@@ -1,4 +1,5 @@
 {
+  "name": "sample-repo",
   "datasetVersion": "1",
   "description": "Labeled retrieval questions for tests/fixtures/sample-repo. Each question lists the source ranges a correct answer must be grounded in. Kept outside the fixture directory so the labels are never indexed. 'dev' questions may be used while tuning retrieval; 'test' questions must not be.",
   "fixtureRevision": "ee02b2da366aa000b30541463014b895d5cebb67",

@@ -21,10 +21,13 @@ list): `docs/open-questions.md`.
   Testcontainers; Docker must be running), `tests/Trace.SecurityTests`
 - `tests/fixtures/sample-repo` — the synthetic repository used for tests and evaluation;
   `tests/fixtures/sample-repo.questions.json` — its labeled questions
+- `tools/Trace.Evals` — the evaluation runner (`docs/evaluation.md`); a command-line tool,
+  not a host. Result files go to the git-ignored `eval/results/`
 - `infra/` — compose files and the Azure template (never deployed)
 
 A unit test enforces the dependency direction by reading the project files. Do not add a
-reference that points outward.
+reference that points outward. A project under `tools/` may reference the layers but never a
+host, and nothing under `src/` may reference a tool.
 
 ## Commands (run from the repository root)
 
