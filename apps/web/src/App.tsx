@@ -12,6 +12,7 @@ import {
 } from './api.ts'
 import { ApiStatus } from './ApiStatus.tsx'
 import { InvestigationView, POLL_INTERVAL_MS, Steps } from './InvestigationView.tsx'
+import { RepositoryList } from './RepositoryList.tsx'
 
 const MAX_QUESTION_LENGTH = 4000
 
@@ -92,7 +93,9 @@ export default function App() {
 
       {repositories.isSuccess && indexed.length === 0 && (
         <p role="status">
-          No repository has been indexed yet. Start the API in Development to index the demo repository.
+          {repositories.data.length === 0
+            ? 'No repository is available yet. Sign in with GitHub and install the TRACE app on a repository.'
+            : 'No repository has been indexed yet. Index one below to ask about it.'}
         </p>
       )}
 
@@ -155,6 +158,10 @@ export default function App() {
       )}
 
       {investigation && !working && <InvestigationView investigation={investigation} />}
+
+      {repositories.isSuccess && repositories.data.length > 0 && (
+        <RepositoryList repositories={repositories.data} mayIndex={mayAsk} />
+      )}
 
       <footer>
         <ApiStatus />

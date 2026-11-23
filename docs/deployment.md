@@ -78,8 +78,7 @@ report "not ready" until it finishes; that is expected.
 
 5. In the GitHub App's settings, set Homepage, Callback (`<address>/api/v1/auth/callback`)
    and Webhook (`<address>/api/v1/github/webhooks`) to the address from step 4.
-6. Open the address, sign in with GitHub, and queue an index of one repository
-   (`POST /api/v1/repositories/<id>/index-jobs`).
+6. Open the address, sign in with GitHub, and press **Index** next to one repository.
 
 ## Releasing a new version
 

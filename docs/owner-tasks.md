@@ -91,28 +91,9 @@ You need Docker Desktop running, plus .NET SDK 10 and Node.js 24.
 
 - [ ] Choose **Sign in with GitHub** and approve. You should land back on TRACE, signed in,
       with the repository from part 2 in the list.
-- [ ] Index it. There is no button yet, so open the browser's developer tools (F12),
-      go to the Console tab, and run:
-
-  ```js
-  const repos = await (await fetch('/api/v1/repositories')).json();
-  console.table(repos.map(r => ({ id: r.id, name: `${r.owner}/${r.name}` })));
-  ```
-
-  Copy the `id` of your repository, then:
-
-  ```js
-  const job = await (await fetch('/api/v1/repositories/<id>/index-jobs', { method: 'POST' })).json();
-  console.log(job);
-  ```
-
-  To check on it, run this until `status` is `succeeded`:
-
-  ```js
-  await (await fetch(`/api/v1/jobs/${job.id}`)).json();
-  ```
-
-- [ ] Reload the page, pick your repository, and ask a question you already know the answer
+- [ ] Index it: under **Repositories**, press **Index** next to your repository and wait for
+      "Indexing finished".
+- [ ] Pick your repository, and ask a question you already know the answer
       to. For example, "Where is authentication handled?"
 - [ ] Check the answer:
   - Is it correct?

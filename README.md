@@ -119,7 +119,7 @@ export Embeddings__Provider=voyage     VOYAGE_API_KEY=...
 ```
 
 Snapshots record the embedding model they were built with, so after switching embedding
-provider, queue a re-index (`POST /api/v1/repositories/<id>/index-jobs`) before asking
+provider, index again (the Index again button, or `POST /api/v1/repositories/<id>/index-jobs`) before asking
 questions. With real providers, indexed source text is sent to Voyage and retrieved passages to
 Anthropic.
 

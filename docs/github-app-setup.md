@@ -64,8 +64,7 @@ environment variables.
    TRACE may read.
 2. Open TRACE and choose **Sign in with GitHub**. The repositories you can access through the
    app appear in the repository list.
-3. Index one: `POST /api/v1/repositories/<id>/index-jobs` (the web UI does not have a button
-   for this yet). After that, pushes to its default branch re-index it automatically if
+3. Index one: under **Repositories**, press **Index** next to it. After that, pushes to its default branch re-index it automatically if
    webhooks are active.
 
 ## What TRACE can and cannot do with this app

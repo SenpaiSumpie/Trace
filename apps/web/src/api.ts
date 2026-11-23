@@ -131,6 +131,29 @@ export function isFinished(investigation: Investigation): boolean {
   return investigation.state === 'completed' || investigation.state === 'failed' || investigation.state === 'cancelled'
 }
 
+export interface Job {
+  id: string
+  kind: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+  attempts: number
+  maxAttempts: number
+  cancelRequested: boolean
+  errorCode: string | null
+}
+
+/** Queues indexing of a repository at the latest commit of its default branch. */
+export function startIndexing(repositoryId: string): Promise<Job> {
+  return request<Job>(`/api/v1/repositories/${repositoryId}/index-jobs`, { method: 'POST' })
+}
+
+export function getJob(jobId: string): Promise<Job> {
+  return request<Job>(`/api/v1/jobs/${jobId}`)
+}
+
+export function isJobFinished(job: Job): boolean {
+  return job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled'
+}
+
 export interface Me {
   user: { login: string } | null
   signInAvailable: boolean

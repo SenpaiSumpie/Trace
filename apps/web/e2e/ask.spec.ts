@@ -46,6 +46,19 @@ test('a question the repository cannot answer reports insufficient evidence', as
   await expect(page.getByRole('figure')).toHaveCount(0)
 })
 
+test('index the demo repository again from the page', async ({ page }) => {
+  await page.goto('/')
+
+  const row = page.getByRole('listitem').filter({ hasText: 'trace-demo/sample-repo' })
+  await expect(row).toContainText('Indexed at commit ee02b2da366a')
+
+  await row.getByRole('button', { name: 'Index again' }).click()
+
+  await expect(row.getByText('Indexing finished.')).toBeVisible()
+  await expect(row).toContainText('Indexed at commit ee02b2da366a')
+  await expect(row.getByRole('button', { name: 'Index again' })).toBeEnabled()
+})
+
 test('the form works from the keyboard alone', async ({ page }) => {
   await page.goto('/')
 

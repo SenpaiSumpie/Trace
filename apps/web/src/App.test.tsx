@@ -270,6 +270,62 @@ test('says so when no repository has been indexed', async () => {
   expect(screen.queryByRole('button', { name: 'Ask' })).toBeNull()
 })
 
+test('indexes a repository, shows progress, then offers it for questions', async () => {
+  const unindexed: Repository = { ...repository, id: 'repo-2', owner: 'alice', name: 'notes', latestSnapshot: null }
+  const job = { id: 'job-9', kind: 'repository.index', status: 'queued', attempts: 0, maxAttempts: 3, cancelRequested: false, errorCode: null }
+  let polls = 0
+  const fetchMock = renderApp({
+    'GET /api/v1/repositories': () =>
+      json([polls >= 2 ? { ...unindexed, latestSnapshot: { ...repository.latestSnapshot!, id: 'snap-2', commitSha: 'abcdef0123456789abcdef0123456789abcdef01' } } : unindexed]),
+    'POST /api/v1/repositories/repo-2/index-jobs': () => json(job, 202),
+    'GET /api/v1/jobs/job-9': () => json(++polls === 1 ? { ...job, status: 'running', attempts: 1 } : { ...job, status: 'succeeded', attempts: 1 }),
+  })
+
+  expect(await screen.findByText(/No repository has been indexed yet\. Index one below/)).toBeTruthy()
+  expect(screen.getByText('Not indexed yet')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Ask' })).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Index alice/notes' }))
+
+  expect(await screen.findByText('Waiting for a worker…')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Index alice/notes' }) as HTMLButtonElement).disabled).toBe(true)
+  expect(await screen.findByText('Indexing…', undefined, { timeout: 3000 })).toBeTruthy()
+
+  expect(await screen.findByText('Indexed at commit abcdef012345', undefined, { timeout: 3000 })).toBeTruthy()
+  expect(await screen.findByRole('option', { name: 'alice/notes at abcdef012345' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Index again alice/notes' })).toBeTruthy()
+  expect(screen.queryByText('Indexing…')).toBeNull()
+  expect(screen.getByText('Indexing finished.')).toBeTruthy()
+  expect(fetchMock.mock.calls.filter(([input, init]) => String(input).endsWith('/index-jobs') && init?.method === 'POST')).toHaveLength(1)
+})
+
+test('says so when indexing fails and lets the caller try again', async () => {
+  const failed = { id: 'job-9', kind: 'repository.index', status: 'failed', attempts: 3, maxAttempts: 3, cancelRequested: false, errorCode: 'attempts_exhausted' }
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'POST /api/v1/repositories/repo-1/index-jobs': () => json(failed, 202),
+  })
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Index again trace-demo/sample-repo' }))
+
+  expect((await screen.findByRole('alert')).textContent).toContain('Indexing failed.')
+  expect(screen.getByText('Indexed at commit ee02b2da366a')).toBeTruthy()
+  expect((screen.getByRole('button', { name: 'Index again trace-demo/sample-repo' }) as HTMLButtonElement).disabled).toBe(false)
+})
+
+test('shows why indexing could not be started', async () => {
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'POST /api/v1/repositories/repo-1/index-jobs': () => json({ detail: 'Too many requests. Try again shortly.' }, 429),
+  })
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Index again trace-demo/sample-repo' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'Indexing could not be started. Too many requests. Try again shortly.',
+  )
+})
+
 test('offers sign-in and blocks asking when the caller may not start work', async () => {
   renderApp({
     'GET /api/v1/repositories': () => json([repository]),
@@ -281,6 +337,7 @@ test('offers sign-in and blocks asking when the caller may not start work', asyn
 
   fireEvent.change(await screen.findByLabelText('Question'), { target: { value: 'Anything?' } })
   expect((screen.getByRole('button', { name: 'Ask' }) as HTMLButtonElement).disabled).toBe(true)
+  expect((screen.getByRole('button', { name: 'Index again trace-demo/sample-repo' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
 test('shows who is signed in', async () => {

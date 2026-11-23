@@ -262,6 +262,43 @@ button:disabled {
   font-size: 0.875rem;
 }
 
+/* Repositories */
+
+.repositories {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--rule);
+}
+
+.repository-list {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-list > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem 1rem;
+}
+
+.repository {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.repository-list button {
+  margin-top: 0;
+}
+
+.repository-list p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 footer {
   margin-top: 3rem;
   padding-top: 1rem;
