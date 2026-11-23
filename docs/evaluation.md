@@ -5,7 +5,8 @@ question through the real investigation pipeline, and one result file per run.
 
 This page covers the dataset format, [how questions are added](#adding-questions), the
 [fixture's question set](#the-fixtures-question-set), the runner, the result file, the
-[metrics](#metrics) computed from a result file and [comparing two runs](#compare-two-runs).
+[metrics](#metrics) computed from a result file, [comparing two runs](#compare-two-runs) and
+[the smoke check](#the-smoke-check) that CI runs.
 
 **Status:** everything here has only ever been run with the fake providers on the fixture
 repository. It has not been run against Claude or Voyage. With the fake chat model the
@@ -13,13 +14,14 @@ outcomes say that the plumbing works, not that answers are good: that model only
 passages sharing words with the question. With the fake embeddings recall says nothing about
 retrieval with a real embedding model.
 
-Three commands:
+Four commands:
 
 | Command | What it does | Needs |
 |---|---|---|
 | `run` | Asks a dataset's questions and writes a result file | The database |
 | `report` | Prints the metrics of one result file | Nothing but the file |
 | `compare` | Prints what changed between two result files | Nothing but the files |
+| `check` | Fails when a result file does not meet an expectations file | Nothing but the files |
 
 ## Run it
 
@@ -40,12 +42,13 @@ nothing and takes a few seconds.
 | `--source <directory>` | The repository to index, as a local directory. Required. |
 | `--output <directory>` | Where the result file goes. Default `eval/results/` in the repository root, which is git-ignored. |
 | `--split dev\|test` | Run only one split. Default: every question. |
+| `--expectations <file>` | Run only the questions an expectations file lists ([the smoke check](#the-smoke-check)). Cannot be combined with `--split`. |
 | `--allow-revision-mismatch` | Run even though the source is not the revision the dataset names (see below). |
 | `--keep-database` | Leave the run's database in place to look at afterwards. |
 
 Exit code 0 means the run finished, **whatever the questions' outcomes were**: a failed
 question is a measurement, not an error of the tool. 1 means the run could not start or
-complete (bad arguments, invalid dataset, database unreachable, revision mismatch). 2 means it
+complete (bad arguments, invalid dataset or expectations file, database unreachable, revision mismatch). 2 means it
 was stopped early (Ctrl+C); the result file is still written.
 
 The output lists each question by ID with its outcome, counts and time. It never prints a
@@ -262,7 +265,7 @@ Per run:
 | `runId` | A random ID for this run. |
 | `status` | `completed`, or `cancelled` if the run was stopped early. |
 | `traceCommit`, `traceCommitDirty` | The Git commit of TRACE that ran the questions, and whether the working tree had uncommitted changes. `unknown` and `null` if Git could not be asked. |
-| `dataset` | `name`, `version`, `revision`, `revisionMatchesSnapshot` (`null` if the dataset states no revision), `split` (`all`, `dev` or `test`), `questionCount`. |
+| `dataset` | `name`, `version`, `revision`, `revisionMatchesSnapshot` (`null` if the dataset states no revision), `split` (`all`, `dev` or `test`, or `subset` when the run was limited by `--expectations`), `questionCount`. |
 | `snapshot` | `commitSha` (the revision every question was pinned to), `branch`, `chunkerVersion`, `embeddingProvider`, `embeddingModel`: the index version. |
 | `chat` | `provider`, `model`, `promptVersion`. |
 | `prices` | The prices used for the estimates (`currency`, the four per-million values), or `null`. |
@@ -426,7 +429,105 @@ question whose text or labels differ between the files. It also has both runs' f
 tables. The JSON is `comparisonVersion` 1 (`EvalComparisonTests` asserts its fields).
 
 Exit code 0 even when questions regressed: a regression is a finding, not a failure of the
-tool. Nothing fails a build on a regression yet.
+tool. `compare` does not gate a build and CI does not run it; the smoke check below does
+([ADR-012](adr/ADR-012-evaluation-smoke-check.md) says why).
+
+## The smoke check
+
+CI runs six fixture questions through the pipeline with the fake providers on every push and
+pull request, and fails the build when the result is not what is written down
+([ADR-012](adr/ADR-012-evaluation-smoke-check.md)). The same three commands work locally:
+
+```sh
+dotnet run --project tools/Trace.Evals -- run --dataset tests/fixtures/sample-repo.questions.json --source tests/fixtures/sample-repo --expectations tests/fixtures/sample-repo.smoke.json
+dotnet run --project tools/Trace.Evals -- report eval/results/<result file>.json
+dotnet run --project tools/Trace.Evals -- check eval/results/<result file>.json --expectations tests/fixtures/sample-repo.smoke.json
+```
+
+`run --expectations` asks only the questions the file lists. `check` reads the result file
+and the expectations file, writes nothing, and prints either
+
+```text
+Check passed: 6 question(s) of 'sample-repo' meet their expectations.
+```
+
+or every expectation that was not met, by question ID, for example:
+
+```text
+Check FAILED: 2 expectation(s) not met for the 6 question(s) of 'sample-repo'.
+  - pagination-offset: expected the outcome 'answered' but it was 'failed (model_error)'.
+  - pagination-offset: no validated evidence overlaps a labeled location.
+```
+
+Exit code 0 when every expectation is met, **3 when at least one is not**, 1 when the
+arguments are wrong or a file cannot be used. The output never contains a question, an answer
+or source text.
+
+### The expectations file
+
+```json
+{
+  "dataset": "sample-repo",
+  "description": "Free text.",
+  "questions": [
+    { "id": "pagination-offset", "outcome": "answered", "labelsRetrieved": true, "citesLabel": true },
+    { "id": "on-call-contact", "notes": "Free text." }
+  ]
+}
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `dataset` | yes | The name of the dataset the questions belong to. A dataset or result file with another name is refused. |
+| `description` | no | Free text. |
+| `questions[].id` | yes | A question of that dataset. It must be in the `dev` split. |
+| `questions[].outcome` | no | The outcome the question must end with: `answered`, `insufficient_evidence` or `failed`. Left out, the question must end as an answer or an abstention, whichever, and not fail. |
+| `questions[].labelsRetrieved` | no | `true`: every labeled location must be among the 10 best hits of the question's [retrieval](#retrieval-measurement). |
+| `questions[].citesLabel` | no | `true`: the validated evidence must overlap a labeled location. |
+| `questions[].notes` | no | Free text. |
+
+Unknown properties are an error, so a misspelt expectation cannot be silently ignored.
+
+Checked for every listed question whatever the file says: it is in the result file, and none
+of its citations was discarded by validation. Checked for the run: it completed, it is a run
+of the named dataset, and the source was the revision the labels were written against.
+Questions in the result file that the expectations do not list are not looked at.
+
+Rules:
+
+- **Development questions only.** `run --expectations` and `check` both refuse a question of
+  the held-out `test` split. An expectation is written from a question's result, and held-out
+  results must not shape anything.
+- **The list is the subset.** A question added to the dataset is not part of the smoke run
+  until it is listed. A listed ID the dataset does not have stops `run` before it starts.
+- **An expectation states what the pipeline does today, not what would be right.** With the
+  fake chat model an unanswerable question is answered, so `on-call-contact` has no expected
+  outcome: demanding `insufficient_evidence` would fail, and demanding `answered` would write
+  a wrong behaviour down as the goal.
+- When a deliberate change to search, chunking or a fake model breaks an expectation, change
+  the expectation in the same commit and say why in the message. Do not remove a question to
+  get a green build.
+
+### The fixture's smoke subset
+
+`tests/fixtures/sample-repo.smoke.json`: `pagination-offset`, `page-size-rationale`,
+`title-max-length`, `webhook-attempts` and `api-key-rotation`, each expected to be answered
+with every labeled location retrieved and cited (7 locations in C# source, a decision record
+and the operations document), and the unanswerable `on-call-contact` with no expected
+outcome. `EvalExpectationsTests` pins the list.
+
+A green smoke check means that indexing, search, the tool loop, citation validation, storage,
+the runner and the report still work together on six questions. It says nothing about answer
+quality, about abstention, or about the real models.
+
+### In CI
+
+The `eval-smoke` job of `.github/workflows/ci.yml` starts a PostgreSQL service container,
+builds the tool and runs the three commands above. It sets no provider and no key: the tool's
+defaults are the fake providers, and it calls no outside service. The result file and the
+report (`report/<name>.report.md` and `.report.json`) are uploaded as the artifact
+`eval-smoke`, also when the check failed, and kept for 30 days. They quote the fixture, which
+is synthetic and public.
 
 ## What is not there yet
 
@@ -437,7 +538,9 @@ tool. Nothing fails a build on a regression yet.
   embedding provider every run indexes the source again, which costs money each time.
 - **No record of what the model's own searches returned**: tool calls carry result counts
   only.
-- **No CI gate.** Nothing runs the evaluation or fails on a regression in CI (step M1.4).
+- **CI checks six fake-model questions and nothing more.** The smoke check is absolute: it
+  cannot see a number getting worse inside what the expectations allow, it never runs a real
+  model, and nothing fails a build on a regression between two runs.
 - **Local directories only.** A repository indexed from GitHub cannot be evaluated yet; check
   it out and pass the directory.
 - **No history table.** The handoff's `eval_runs` table does not exist; a run is a file.

@@ -66,6 +66,10 @@ line range. The full specification is in
   regressions first ([ADR-010](docs/adr/ADR-010-evaluation-metrics.md)).
   The fixture has 34 labeled questions (15 development, 19 held-out), 7 of which the
   repository cannot answer ([ADR-011](docs/adr/ADR-011-fixture-question-set.md)).
+  CI runs six of the development questions with the fake models on every push and fails the
+  build when a `check` command finds a written expectation unmet
+  ([ADR-012](docs/adr/ADR-012-evaluation-smoke-check.md)); that guards the plumbing, not
+  answer quality.
   **Only ever run with the fake models on the fixture: there is no real-model baseline.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
@@ -164,6 +168,15 @@ dotnet run --project tools/Trace.Evals -- compare eval/results/<baseline>.json e
 `report` prints retrieval recall at 10, citation validity, abstention precision and recall,
 cost and time, for all questions and for each split. `compare` lists every question with what
 changed, regressions first. Both also write Markdown and JSON next to the result file.
+
+CI runs a fixed smoke subset of six questions the same way and fails the build if the result
+does not meet the expectations in `tests/fixtures/sample-repo.smoke.json`. To do the same
+locally (`check` exits 3 when an expectation is not met):
+
+```sh
+dotnet run --project tools/Trace.Evals -- run --dataset tests/fixtures/sample-repo.questions.json --source tests/fixtures/sample-repo --expectations tests/fixtures/sample-repo.smoke.json
+dotnet run --project tools/Trace.Evals -- check eval/results/<result file>.json --expectations tests/fixtures/sample-repo.smoke.json
+```
 
 The dataset format, the result file, the definition of every metric and every option are in
 [docs/evaluation.md](docs/evaluation.md). With the fake models the numbers show that the

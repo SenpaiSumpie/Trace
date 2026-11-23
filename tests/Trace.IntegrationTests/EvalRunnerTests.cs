@@ -23,6 +23,9 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
     private const string TaskRepositoryPath = "src/TaskBoard.Api/Tasks/TaskRepository.cs";
     private const string TraceCommit = "1234567890abcdef1234567890abcdef12345678";
 
+    /// <summary>The checked-in smoke subset: <c>tests/fixtures/sample-repo.smoke.json</c>.</summary>
+    private static readonly string SmokeExpectations = SampleRepo.Path + ".smoke.json";
+
     private static readonly ModelPrices Prices = new(
         InputPerMillion: 10m, OutputPerMillion: 50m, CacheReadPerMillion: 1m, CacheWritePerMillion: 12.5m);
 
@@ -225,6 +228,151 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         {
             await ScalarAsync(configured.ConnectionString, $"DROP DATABASE {databaseName} WITH (FORCE)");
         }
+    }
+
+    /// <summary>
+    /// Exactly what CI does (ADR-012): run the smoke subset with the fake providers, check the
+    /// result file against the checked-in expectations, and write the report.
+    /// </summary>
+    [Fact]
+    public async Task The_smoke_subset_runs_with_the_fake_providers_and_meets_its_expectations()
+    {
+        await using var configured = await postgres.CreateDatabaseAsync(migrate: false);
+        using var outputDirectory = new TempDirectory();
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        var exitCode = await EvalCommand.RunAsync(
+            ["run", "--dataset", SampleRepo.Path + ".questions.json", "--source", SampleRepo.Path, "--output", outputDirectory.Path, "--expectations", SmokeExpectations],
+            output,
+            error,
+            builder => builder.Configuration.AddInMemoryCollection(
+                new Dictionary<string, string?> { ["ConnectionStrings:Trace"] = configured.ConnectionString }));
+
+        Assert.True(exitCode == EvalCommand.ExitOk, $"Exit code {exitCode}. Errors: {error}");
+        var file = Assert.Single(Directory.GetFiles(outputDirectory.Path));
+        var result = EvalRunResult.Load(file);
+
+        // Only the listed questions were asked, in dataset order, and the file says it is a subset.
+        Assert.Equal(
+            ["pagination-offset", "page-size-rationale", "title-max-length", "webhook-attempts", "api-key-rotation", "on-call-contact"],
+            result.Questions.Select(question => question.Id));
+        Assert.Equal((EvalDatasetInfo.SubsetSplit, 6), (result.Dataset.Split, result.Dataset.QuestionCount));
+        Assert.Equal(("deterministic-fake", "deterministic-fake"), (result.Chat.Provider, result.Snapshot.EmbeddingProvider));
+        Assert.All(result.Questions, question => Assert.Equal(EvalDataset.DevSplit, question.Split));
+
+        var checkOutput = new StringWriter();
+        exitCode = await EvalCommand.RunAsync(["check", file, "--expectations", SmokeExpectations], checkOutput, error);
+        Assert.True(exitCode == EvalCommand.ExitOk, $"Exit code {exitCode}. Errors: {error}");
+        Assert.Contains("Check passed: 6 question(s) of 'sample-repo' meet their expectations.", checkOutput.ToString(), StringComparison.Ordinal);
+        Assert.Equal(string.Empty, error.ToString());
+
+        // The numbers behind the expectations: every label retrieved and cited, every citation valid.
+        var metrics = EvalMetrics.Report(result).Metrics[0];
+        Assert.Equal((7, 7), (metrics.RecallAt10.Found, metrics.RecallAt10.Labeled));
+        Assert.Equal(1.0, metrics.CitationValidity.Value);
+        Assert.Equal((5, 5), (metrics.LabeledEvidenceCited.Cited, metrics.LabeledEvidenceCited.Questions));
+
+        var reportOutput = new StringWriter();
+        Assert.Equal(EvalCommand.ExitOk, await EvalCommand.RunAsync(["report", file], reportOutput, error));
+        Assert.Contains("only the questions an expectations file lists", reportOutput.ToString(), StringComparison.Ordinal);
+
+        // The same result held against an expectation it does not meet fails the check. The
+        // fake chat model answers the unanswerable question, so demanding an abstention breaks.
+        var demanding = Path.Combine(outputDirectory.Path, "demanding.smoke.json");
+        await File.WriteAllTextAsync(
+            demanding,
+            """{ "dataset": "sample-repo", "questions": [{ "id": "on-call-contact", "outcome": "insufficient_evidence" }] }""");
+        var failed = new StringWriter();
+        Assert.Equal(
+            EvalCommand.ExitExpectationsNotMet,
+            await EvalCommand.RunAsync(["check", file, "--expectations", demanding], new StringWriter(), failed));
+        Assert.Contains(
+            "on-call-contact: expected the outcome 'insufficient_evidence' but it was 'answered'.", failed.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The point of the smoke run: when the pipeline stops working, the run still finishes
+    /// (a failed question is a measurement) and the check is what turns it into a failed build.
+    /// </summary>
+    [Fact]
+    public async Task A_pipeline_that_stops_answering_fails_the_smoke_check()
+    {
+        await using var configured = await postgres.CreateDatabaseAsync(migrate: false);
+        using var outputDirectory = new TempDirectory();
+        var error = new StringWriter();
+        var model = new QuestionChatModel((_, _, _) => throw new ChatModelException("The provider is unreachable."));
+
+        var exitCode = await EvalCommand.RunAsync(
+            ["run", "--dataset", SampleRepo.Path + ".questions.json", "--source", SampleRepo.Path, "--output", outputDirectory.Path, "--expectations", SmokeExpectations],
+            new StringWriter(),
+            error,
+            builder =>
+            {
+                builder.Configuration.AddInMemoryCollection(
+                    new Dictionary<string, string?> { ["ConnectionStrings:Trace"] = configured.ConnectionString });
+                builder.Services.AddSingleton<IChatModel>(model);
+            });
+
+        Assert.True(exitCode == EvalCommand.ExitOk, $"Exit code {exitCode}. Errors: {error}");
+        Assert.Equal(6, model.Questions.Count);
+        var file = Assert.Single(Directory.GetFiles(outputDirectory.Path));
+
+        var output = new StringWriter();
+        var failed = new StringWriter();
+        exitCode = await EvalCommand.RunAsync(["check", file, "--expectations", SmokeExpectations], output, failed);
+
+        Assert.Equal((EvalCommand.ExitExpectationsNotMet, string.Empty), (exitCode, output.ToString()));
+        Assert.Contains("Check FAILED: 11 expectation(s) not met for the 6 question(s) of 'sample-repo'.", failed.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            "pagination-offset: expected the outcome 'answered' but it was 'failed (model_error)'.", failed.ToString(), StringComparison.Ordinal);
+        Assert.Contains("pagination-offset: no validated evidence overlaps a labeled location.", failed.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            "on-call-contact: expected an answer or an abstention but the outcome was 'failed (model_error)'.", failed.ToString(), StringComparison.Ordinal);
+
+        // The search still works, so no retrieval expectation is reported: the failures point at the model.
+        Assert.DoesNotContain("labeled location(s) are among", failed.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Expectations_that_name_a_held_out_or_unknown_question_stop_the_run_before_anything_is_created()
+    {
+        using var directory = new TempDirectory();
+        static void MustNotConfigure(Microsoft.Extensions.Hosting.HostApplicationBuilder builder) =>
+            Assert.Fail("The run must not get as far as building its services.");
+
+        async Task<string> RunWithAsync(string expectationsJson)
+        {
+            var path = Path.Combine(directory.Path, "expectations.json");
+            await File.WriteAllTextAsync(path, expectationsJson);
+            var error = new StringWriter();
+            Assert.Equal(
+                EvalCommand.ExitError,
+                await EvalCommand.RunAsync(
+                    ["run", "--dataset", SampleRepo.Path + ".questions.json", "--source", SampleRepo.Path, "--output", directory.Path, "--expectations", path],
+                    new StringWriter(),
+                    error,
+                    MustNotConfigure));
+            return error.ToString();
+        }
+
+        // 'license' is a held-out question of the fixture.
+        Assert.Contains(
+            "Question 'license' is in the held-out 'test' split.",
+            await RunWithAsync("""{ "dataset": "sample-repo", "questions": [{ "id": "pagination-offset" }, { "id": "license" }] }"""),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "name question 'no-such-question', which dataset 'sample-repo' version 2 does not have",
+            await RunWithAsync("""{ "dataset": "sample-repo", "questions": [{ "id": "no-such-question" }] }"""),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "for dataset 'other-repo' but the dataset is 'sample-repo'",
+            await RunWithAsync("""{ "dataset": "other-repo", "questions": [{ "id": "pagination-offset" }] }"""),
+            StringComparison.Ordinal);
+        Assert.Contains("is not a usable expectations file", await RunWithAsync("{ not json"), StringComparison.Ordinal);
+
+        // Nothing but the expectations file itself was written.
+        Assert.Single(Directory.GetFiles(directory.Path));
     }
 
     [Fact]

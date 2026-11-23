@@ -25,7 +25,8 @@ public sealed record EvalOptions(
     string? OutputDirectory,
     string? Split,
     bool AllowRevisionMismatch,
-    bool KeepDatabase);
+    bool KeepDatabase,
+    string? ExpectationsPath = null);
 
 /// <summary>
 /// The tool's entry point and its <c>run</c> command: index a source directory into a throwaway database, run a dataset's
@@ -38,6 +39,9 @@ public static partial class EvalCommand
 
     /// <summary>The run was stopped early; a result file was still written.</summary>
     public const int ExitCancelled = 2;
+
+    /// <summary>The <c>check</c> command found an expectation that the result file does not meet.</summary>
+    public const int ExitExpectationsNotMet = 3;
 
     /// <summary>Relative to the repository root; git-ignored.</summary>
     public const string DefaultOutputDirectory = "eval/results";
@@ -59,6 +63,7 @@ public static partial class EvalCommand
           dotnet run --project tools/Trace.Evals -- run --dataset <file> --source <directory> [options]
           dotnet run --project tools/Trace.Evals -- report <result file> [--output <directory>]
           dotnet run --project tools/Trace.Evals -- compare <baseline result file> <candidate result file> [--output <directory>]
+          dotnet run --project tools/Trace.Evals -- check <result file> --expectations <file>
 
         run: asks every question of a dataset against a snapshot of the source directory and
         writes one result file.
@@ -67,6 +72,7 @@ public static partial class EvalCommand
           --source <directory>        The repository to index, as a local directory.
           --output <directory>        Where the result file goes. Default: eval/results (git-ignored).
           --split dev|test            Run only one split. Default: all questions.
+          --expectations <file>       Run only the questions an expectations file lists.
           --allow-revision-mismatch   Run even if the source is not the revision the dataset names.
           --keep-database             Do not drop the run's database afterwards.
 
@@ -79,7 +85,9 @@ public static partial class EvalCommand
           --output <directory>        Where the Markdown and JSON files go. Default: next to the
                                       (candidate) result file.
 
-        Neither needs the database or a provider.
+        check: exits 3 when the result file does not meet the expectations file (see docs/evaluation.md).
+
+        None of the three needs the database or a provider.
         """;
 
     public static EvalOptions ParseArguments(IReadOnlyList<string> args)
@@ -87,13 +95,14 @@ public static partial class EvalCommand
         ArgumentNullException.ThrowIfNull(args);
         if (args.Count == 0 || args[0] != "run")
         {
-            throw new EvalUsageException("Expected a command: 'run', 'report' or 'compare'.");
+            throw new EvalUsageException("Expected a command: 'run', 'report', 'compare' or 'check'.");
         }
 
         string? dataset = null;
         string? source = null;
         string? output = null;
         string? split = null;
+        string? expectations = null;
         var allowRevisionMismatch = false;
         var keepDatabase = false;
 
@@ -122,6 +131,9 @@ public static partial class EvalCommand
                     }
 
                     break;
+                case "--expectations":
+                    expectations = Value();
+                    break;
                 case "--allow-revision-mismatch":
                     allowRevisionMismatch = true;
                     break;
@@ -133,13 +145,19 @@ public static partial class EvalCommand
             }
         }
 
+        if (split is not null && expectations is not null)
+        {
+            throw new EvalUsageException("'--split' and '--expectations' cannot be combined: an expectations file already names its questions.");
+        }
+
         return new EvalOptions(
             dataset ?? throw new EvalUsageException("'--dataset' is required."),
             source ?? throw new EvalUsageException("'--source' is required."),
             output,
             split,
             allowRevisionMismatch,
-            keepDatabase);
+            keepDatabase,
+            expectations);
     }
 
     /// <param name="configure">
@@ -161,12 +179,19 @@ public static partial class EvalCommand
             return await EvalReportCommand.RunAsync(args, output, error, cancellationToken);
         }
 
+        if (EvalCheckCommand.Handles(args))
+        {
+            return await EvalCheckCommand.RunAsync(args, output, error);
+        }
+
         EvalOptions options;
         EvalDataset dataset;
+        IReadOnlySet<string>? questionIds;
         try
         {
             options = ParseArguments(args);
             dataset = EvalDataset.Load(options.DatasetPath);
+            questionIds = options.ExpectationsPath is null ? null : EvalExpectations.Load(options.ExpectationsPath).SelectFrom(dataset);
             if (!Directory.Exists(options.SourceDirectory))
             {
                 throw new EvalUsageException($"The source directory '{options.SourceDirectory}' does not exist.");
@@ -179,7 +204,7 @@ public static partial class EvalCommand
             await error.WriteLineAsync(Usage);
             return ExitError;
         }
-        catch (EvalDatasetException exception)
+        catch (Exception exception) when (exception is EvalDatasetException or EvalExpectationsException)
         {
             await error.WriteLineAsync(exception.Message);
             return ExitError;
@@ -187,7 +212,7 @@ public static partial class EvalCommand
 
         try
         {
-            return await RunAsync(options, dataset, output, error, configure, cancellationToken);
+            return await RunAsync(options, dataset, questionIds, output, error, configure, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -204,6 +229,7 @@ public static partial class EvalCommand
     private static async Task<int> RunAsync(
         EvalOptions options,
         EvalDataset dataset,
+        IReadOnlySet<string>? questionIds,
         TextWriter output,
         TextWriter error,
         Action<HostApplicationBuilder>? configure,
@@ -290,7 +316,8 @@ public static partial class EvalCommand
             traceCommitDirty,
             timeout,
             options.Split,
-            options.AllowRevisionMismatch);
+            options.AllowRevisionMismatch,
+            questionIds);
 
         var number = 0;
         var result = await host.Services.GetRequiredService<EvalRunner>().RunAsync(

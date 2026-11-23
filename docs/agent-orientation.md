@@ -22,8 +22,10 @@ list): `docs/open-questions.md`.
 - `tests/fixtures/sample-repo` — the synthetic repository used for tests and evaluation;
   `tests/fixtures/sample-repo.questions.json` — its labeled questions
 - `tools/Trace.Evals` — the evaluation tool (`docs/evaluation.md`): `run` asks a dataset's
-  questions, `report` computes the metrics of a result file, `compare` diffs two. A
-  command-line tool, not a host. Result files go to the git-ignored `eval/results/`
+  questions, `report` computes the metrics of a result file, `compare` diffs two, `check` fails
+  when a result file does not meet an expectations file (CI runs it on the smoke subset
+  `tests/fixtures/sample-repo.smoke.json`). A command-line tool, not a host. Result files go
+  to the git-ignored `eval/results/`
 - `infra/` — compose files and the Azure template (never deployed)
 
 A unit test enforces the dependency direction by reading the project files. Do not add a

@@ -201,14 +201,18 @@ public sealed record EvalRunResult(
 
 /// <param name="Revision">The revision the dataset says its labels were written against, if any.</param>
 /// <param name="RevisionMatchesSnapshot">Null when the dataset states no revision.</param>
-/// <param name="Split">The split the run was limited to, or "all".</param>
+/// <param name="Split">The split the run was limited to, "all", or <see cref="SubsetSplit"/>.</param>
 public sealed record EvalDatasetInfo(
     string Name,
     string Version,
     string? Revision,
     bool? RevisionMatchesSnapshot,
     string Split,
-    int QuestionCount);
+    int QuestionCount)
+{
+    /// <summary>The run asked only the questions an expectations file lists (<c>run --expectations</c>).</summary>
+    public const string SubsetSplit = "subset";
+}
 
 /// <param name="CommitSha">The indexed revision every question was pinned to.</param>
 /// <param name="ChunkerVersion">The chunker that built the snapshot (its recorded parser version).</param>

@@ -93,8 +93,15 @@
         "The existing retrieval floor tests still pass or are updated with the new counts and the reason",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T20:38:53.571Z"
+      "status": "done",
+      "startedAt": "2026-11-23T20:38:53.571Z",
+      "finishedAt": "2026-11-23T20:53:40.645Z",
+      "evidence": "Commit f8c008c \"feat(evals): fixture question set of 34 with unanswerable questions\" pushed to main; CI run 45263480620 concluded success (backend, web, e2e, deployment-artifacts). Supervisor verification: `git log -1 --oneline` shows f8c008c; `git status --short` empty, main in sync with origin/main; `gh run list --limit 1` shows headSha f8c008c1 completed/success; parsing tests/fixtures/sample-repo.questions.json myself gives datasetVersion 2, 34 questions, 34 unique ids, 7 with answerable false, split dev 15 and test (held-out) 19; `dotnet build` re-run 0 warnings 0 errors; `dotnet test tests/Trace.UnitTests --no-build` re-run 254 passed. Subagent evidence: (1) 34 questions, 7 unanswerable, 31 labeled locations; each has a split and either expected locations or answerable false. (2) 19 held-out, 13 new; no search, chunking or prompt setting changed; no label, wording or split changed after results were seen. (3) datasetVersion \"2\"; docs/evaluation.md sections \"Adding questions\", \"Changing the fixture\", \"The fixture's question set\"; ADR-011. (4) EvalDatasetTests.The_fixture_questions_are_enough_have_both_splits_and_every_label_points_at_real_lines and A_label_outside_the_fixture_would_be_caught. (5) RetrievalTests floors restated with the reason: top 5 for 24 of 27 answerable, top 10 for 26 of 27 (was 9 and 10 of 11). (6) dotnet build 0 warnings; tests unit 254, security 21, integration 230, 0 failed; dotnet format --verify-no-changes exit 0; apps/web lint clean, 21 tests, build ok, 4 e2e passed. Fixture grew from 14 files/17 passages to 21 files/27 passages of invented content; revision 4a07032f452579445ba5be2a05d574028b69754d. Fake-provider report on version 2: recall at 10 96.8% (30 of 31) overall, dev 100%, held-out 93.8% (15 of 16); citation validity 100% (102 of 102); abstention recall 0 of 7 because the fake model never abstains. Nothing spent.",
+      "deferred": "Nothing stubbed. Not verified: nothing was run against Claude or Voyage, so abstention is unmeasured (the fake chat model answered all 7 unanswerable questions; it only abstains when search returns nothing). One author wrote the fixture content, the questions and the labels, and several questions share a distinctive word with their labeled lines, so the set is probably easy for word matching (open question 75). \"Unanswerable\" is the agent's judgment; password-hashing is the closest to answerable (open question 76). Six of the 19 held-out questions predate this step and had been looked at once before (open question 25). Held-out misses were reported and not fixed: configured-page-size is outside the top 10, last-page-ui at rank 9, client-api-key fell to rank 8. New fixture source files are indexed but never compiled.",
+      "ownerActions": [
+        "Optional: read the 23 new questions and labels in tests/fixtures/sample-repo.questions.json as a second reader, especially the 13 new held-out ones; one author wrote the fixture, the questions and the labels.",
+        "After the first real-model run (M1.5), read the results for the 7 unanswerable questions by hand; password-hashing is the one most likely to be reasonably answered."
+      ]
     },
     {
       "id": "M1.4",
@@ -107,7 +114,8 @@
         "No real provider is called in CI and no secret is needed",
         "CI is green on the pushed commit, and the artifact is present on that run"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T20:53:46.904Z"
     },
     {
       "id": "M1.5",

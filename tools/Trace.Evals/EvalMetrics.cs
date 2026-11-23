@@ -294,7 +294,11 @@ public static class EvalMetrics
             notes.Add("The run was stopped early: questions that were cancelled or not run are left out of the abstention, labeled-evidence, cost and duration numbers.");
         }
 
-        if (run.Dataset.Split != AllScope)
+        if (run.Dataset.Split == EvalDatasetInfo.SubsetSplit)
+        {
+            notes.Add("The run asked only the questions an expectations file lists: the numbers are about that subset, not the dataset.");
+        }
+        else if (run.Dataset.Split != AllScope)
         {
             notes.Add("The run was limited to one split: the other split's column is empty.");
         }

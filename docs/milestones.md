@@ -63,7 +63,11 @@ Done when:
       baseline yet)
 - [ ] Citation validity is at least 95% and recall at 10 is at least 85% on the held-out
       set, or the shortfall is written down with its cause
-- [ ] A small smoke subset runs in CI with the fake models
+- [x] A small smoke subset runs in CI with the fake models
+      (six development questions, checked against written expectations by the `eval-smoke`
+      job, which uploads the result file and report; see
+      [evaluation.md](evaluation.md#the-smoke-check). It guards the plumbing, not answer
+      quality)
 - [x] Results from two runs can be compared question by question
       (`compare`, see [evaluation.md](evaluation.md#compare-two-runs); only ever used on
       fake-model runs)

@@ -12,6 +12,7 @@ namespace Trace.Evals;
 public sealed class EvalException(string message) : Exception(message);
 
 /// <param name="Split">Run only this split; null runs every question.</param>
+/// <param name="QuestionIds">Run only the questions with these IDs; null applies no such limit.</param>
 /// <param name="QuestionTimeout">A question still running after this long is stopped and recorded as failed with <c>timed_out</c>.</param>
 public sealed record EvalRunRequest(
     EvalDataset Dataset,
@@ -24,7 +25,8 @@ public sealed record EvalRunRequest(
     bool? TraceCommitDirty,
     TimeSpan QuestionTimeout,
     string? Split = null,
-    bool AllowRevisionMismatch = false);
+    bool AllowRevisionMismatch = false,
+    IReadOnlySet<string>? QuestionIds = null);
 
 /// <summary>
 /// Runs labeled questions through the production pipeline and describes what happened.
@@ -74,6 +76,7 @@ public sealed class EvalRunner(
 
         var questions = request.Dataset.Questions
             .Where(question => request.Split is null || question.Split == request.Split)
+            .Where(question => request.QuestionIds is null || request.QuestionIds.Contains(question.Id))
             .ToList();
 
         var startedAt = timeProvider.GetUtcNow();
@@ -108,7 +111,7 @@ public sealed class EvalRunner(
                 request.Dataset.Version,
                 request.Dataset.Revision,
                 revisionMatches,
-                request.Split ?? "all",
+                request.QuestionIds is not null ? EvalDatasetInfo.SubsetSplit : request.Split ?? "all",
                 questions.Count),
             new EvalSnapshotInfo(
                 snapshot.CommitSha, snapshot.Branch, snapshot.ParserVersion, request.EmbeddingProvider, snapshot.EmbeddingModel),

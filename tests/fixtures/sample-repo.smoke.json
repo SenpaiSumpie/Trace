@@ -1,0 +1,15 @@
+{
+  "dataset": "sample-repo",
+  "description": "The smoke subset CI runs with the fake providers (docs/evaluation.md, ADR-012). Development-split questions only. The expectations are what the deterministic fake models produce today; they show that the runner and the pipeline work, not that answers are good.",
+  "questions": [
+    { "id": "pagination-offset", "outcome": "answered", "labelsRetrieved": true, "citesLabel": true },
+    { "id": "page-size-rationale", "outcome": "answered", "labelsRetrieved": true, "citesLabel": true },
+    { "id": "title-max-length", "outcome": "answered", "labelsRetrieved": true, "citesLabel": true },
+    { "id": "webhook-attempts", "outcome": "answered", "labelsRetrieved": true, "citesLabel": true },
+    { "id": "api-key-rotation", "outcome": "answered", "labelsRetrieved": true, "citesLabel": true },
+    {
+      "id": "on-call-contact",
+      "notes": "Unanswerable. No outcome is expected: the fake chat model answers it, a real model should abstain, and neither is this check's business. It must only reach an answer or an abstention without failing."
+    }
+  ]
+}

@@ -77,6 +77,52 @@ jobs:
       - run: npm run test:e2e
         working-directory: apps/web
 
+  # A few fixture questions through the real investigation pipeline with the fake models
+  # (docs/evaluation.md, ADR-012). It needs no key and calls no outside service.
+  eval-smoke:
+    runs-on: ubuntu-latest
+    services:
+      # The server evalsettings.json points at; the run creates and drops a database of its own on it.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: trace
+          POSTGRES_PASSWORD: local-dev-only-change-me
+          POSTGRES_DB: trace
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd "pg_isready -U trace -d trace"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - run: dotnet build tools/Trace.Evals -c Release
+      - name: Run the smoke subset
+        run: >-
+          dotnet run --no-build -c Release --project tools/Trace.Evals -- run
+          --dataset tests/fixtures/sample-repo.questions.json
+          --source tests/fixtures/sample-repo
+          --expectations tests/fixtures/sample-repo.smoke.json
+          --output eval/results
+      # The run wrote exactly one JSON file; the report goes into a folder of its own so that stays true.
+      - name: Write the report
+        run: dotnet run --no-build -c Release --project tools/Trace.Evals -- report eval/results/*.json --output eval/results/report
+      - name: Check the expectations
+        run: dotnet run --no-build -c Release --project tools/Trace.Evals -- check eval/results/*.json --expectations tests/fixtures/sample-repo.smoke.json
+      - name: Upload the result file and the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: eval-smoke
+          path: eval/results/
+          if-no-files-found: error
+          retention-days: 30
+
   deployment-artifacts:
     runs-on: ubuntu-latest
     steps:
