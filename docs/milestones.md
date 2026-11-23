@@ -55,16 +55,23 @@ Done when:
       held-out sets, including at least 5 that cannot be answered
       (34 questions: 15 development, 19 held-out, 7 unanswerable; see
       [evaluation.md](evaluation.md#the-fixtures-question-set))
-- [ ] A second labeled set of at least 15 questions exists for one real repository of yours
+- [x] A second labeled set of at least 15 questions exists for one real repository of yours
+      (19 questions, 4 of them unanswerable, in development and held-out splits, kept under
+      the git-ignored `eval/local/` on your machine and nowhere else. **The labels are drafts
+      written by an agent from the indexed source; they await your review.** How to review,
+      rerun and compare: [evaluation.md](evaluation.md#a-private-repository))
 - [x] A baseline is recorded for each handoff metric that applies to questions: retrieval
       recall at 10, citation validity, correct "not enough evidence" results, cost and time
-      ([eval/2026-11-23-fixture-baseline.md](eval/2026-11-23-fixture-baseline.md): one run,
-      on the fixture only; the baseline for a real repository waits for the box above)
+      ([eval/2026-11-23-fixture-baseline.md](eval/2026-11-23-fixture-baseline.md): one run
+      on the fixture. A baseline for the private repository was run on 2026-11-23 as well; its
+      report is under `eval/local/` and its numbers are not published, because they rest on
+      draft labels and describe a private repository)
 - [x] Citation validity is at least 95% and recall at 10 is at least 85% on the held-out
       set, or the shortfall is written down with its cause
       (fixture, held-out split: 68 of 68 citations valid and 16 of 16 labeled locations in
       the top 10. The fixture has 27 passages, so recall at 10 is close to guaranteed there;
-      the numbers that matter will come from the real repository's set)
+      the numbers that matter are the private repository's, once its draft labels are
+      reviewed)
 - [x] A small smoke subset runs in CI with the fake models
       (six development questions, checked against written expectations by the `eval-smoke`
       job, which uploads the result file and report; see

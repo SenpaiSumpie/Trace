@@ -136,8 +136,18 @@
         "If a key is missing, everything else is done and the run is recorded as an owner action instead",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T21:07:38.911Z"
+      "status": "done",
+      "startedAt": "2026-11-23T21:07:38.911Z",
+      "finishedAt": "2026-11-23T21:27:00.582Z",
+      "evidence": "Commits f0b2c49 \"chore(evals): price for claude-opus-5-5 ahead of the baseline run\" and fbbea49 \"docs(evals): real-model baseline on the fixture question set\" pushed to main; CI run 45269307916 on fbbea49 concluded success (eval-smoke, backend, web, e2e, deployment-artifacts). Supervisor verification: `git log -2 --oneline` shows both commits; `git status --short` empty, main in sync with origin/main; `gh run list --limit 1` shows headSha fbbea49a completed/success; docs/eval/2026-11-23-fixture-baseline.md exists; `git check-ignore -v` on the raw result prints .gitignore:494:eval/results/; `git grep` for key-shaped strings in docs, tools and README finds 0; recomputing from the raw result file myself gives 34 questions, 28 answered, 6 insufficient_evidence, cost $1.616, tokens 345,834 input (172,454 cache read, 173,116 cache write) and 34,019 output, model claude-opus-5-5, traceCommit f0b2c49 with dirty False, all matching the report. Subagent evidence: one run, dataset sample-repo v2, snapshot 4a07032f, chunker lines-v1, voyage-code-3, prompt question-v2, 21:12:48Z to 21:18:51Z. Held-out split: citation validity 68/68 (100%, target 95%, met); recall at 10 16/16 (100%, target 85%, met). Overall: citation validity 130/130, recall 31/31, abstention precision 6/6 and recall 6/7, answers citing a labeled location 27/27, cost median $0.048 and p95 $0.071, time median 10.9 s and p95 20.2 s. Real-model questions run: 2 probe + 34 full pass + 0 reruns = 36 of 60; estimated spend $1.72 of $15. No setting overridden (379,853 of the 3,000,000 daily token budget used). Keys present (names and lengths only printed); a script found no .env value in any changed file. dotnet build 0 warnings; tests unit 274, security 21, integration 233, 0 failed; dotnet format --verify-no-changes exit 0. No bug found on the real-provider path. ADR-013 added.",
+      "deferred": "Nothing stubbed. Limits of the result: one run, n=34, so run-to-run variation is unknown; the fixture has only 27 passages, so recall at 10 is close to guaranteed (the report gives ranks: 22 labels at rank 1, 5 at rank 2, worst 6); the fixture, questions and labels have one author; prices are not confirmed against a bill and the estimate was not compared with the Anthropic usage page; Voyage embedding tokens are not reported by the tool and are not costed; correctness was read by the agent (all 28 answers, eight checked statement by statement) and is not a measurement. The one abstention miss is the dev question password-hashing, where the model's answer is true of the fixture but the label says unanswerable; the dataset was not edited (open question 76). No resume or merge of partial runs was built because the pass finished in one go (open question 65). Voyage retry and multi-batch paths were not exercised.",
+      "ownerActions": [
+        "Confirm the claude-opus-5-5 prices (input 4, output 20, cache read 0.4, cache write 5 USD per million tokens) against the Anthropic price page; if they differ, correct Eval:Prices:claude-opus-5-5 in tools/Trace.Evals/evalsettings.json.",
+        "Compare the Anthropic usage page for 2026-11-23 (about 374,620 input and 35,858 output tokens for this step) with the $1.72 estimate, and check Voyage usage for the same day.",
+        "Keep the git-ignored file eval/results/sample-repo-20261123T211248Z-7ec219d2.json; it is the raw baseline, and losing it means a new paid run before any question-by-question comparison.",
+        "Decide whether the fixture question password-hashing should be relabeled, reworded or dropped; the model's answer was true of the fixture but the label says unanswerable. Any change raises datasetVersion.",
+        "Do not use the held-out per-question results, now published in docs/eval/2026-11-23-fixture-baseline.md, for tuning."
+      ]
     },
     {
       "id": "M1.6",
@@ -152,7 +162,8 @@
         "Owner actions list: review the draft labels and rerun",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T21:27:08.648Z"
     },
     {
       "id": "M2.1",

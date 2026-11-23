@@ -76,11 +76,18 @@ line range. The full specification is in
   was in the top 10 (16 of 16). **It is one run of 34 questions on a 27-passage fixture, so it
   shows the pipeline works with Claude and Voyage, not how good retrieval is on a real
   repository.**
+  A repository indexed through the application can be measured too: `run --snapshot` evaluates
+  a copy of its indexed snapshot without re-indexing it and without writing to the database it
+  lives in ([ADR-014](docs/adr/ADR-014-evaluating-an-indexed-snapshot.md)). One private
+  repository has a draft set of 19 questions and one real-model baseline (2026-11-23); both
+  are kept out of this repository, and **the labels are drafts its owner has not reviewed
+  yet**.
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, a labeled question set and baseline for a real repository, a telemetry backend with
-dashboards or alerts, a deployment pipeline. Retrieval has only been measured on the 27-passage fixture.
+Not implemented: issue-to-plan, a telemetry backend with dashboards or alerts, a deployment
+pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
+still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).
 The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
@@ -197,6 +204,18 @@ limits are in
 [docs/eval/2026-11-23-fixture-baseline.md](docs/eval/2026-11-23-fixture-baseline.md);
 [docs/evaluation.md](docs/evaluation.md#running-with-the-real-models) says how to run it
 again, which costs money.
+
+To measure a repository of your own that the application has indexed, without committing
+anything about it:
+
+```sh
+dotnet run --project tools/Trace.Evals -- run --dataset eval/local/<name>/<name>.questions.json --snapshot <snapshot id>
+```
+
+The dataset, the result files and the reports stay under the git-ignored `eval/local/`.
+[docs/evaluation.md](docs/evaluation.md#a-private-repository) has the whole workflow: finding
+the snapshot ID, writing the questions, running, comparing, and checking that nothing leaks
+into a commit.
 
 ## Telemetry
 

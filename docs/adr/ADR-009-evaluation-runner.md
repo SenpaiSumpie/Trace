@@ -65,7 +65,8 @@ where results go. How to use it is in [docs/evaluation.md](../evaluation.md).
 - With a real embedding provider every run embeds the source again. Embedding tokens are not
   recorded or priced.
 - Only local directories can be evaluated. Their revision is a content-derived ID, not a Git
-  commit.
+  commit. (Since extended by [ADR-014](ADR-014-evaluating-an-indexed-snapshot.md): a snapshot
+  indexed through the application can be evaluated from a copy.)
 - Result files have no retrieved locations yet, only result counts per tool call. Recall at 10
   (step M1.2) needs more than that. (Since decided in
   [ADR-010](ADR-010-evaluation-metrics.md): the runner records a retrieval of its own per

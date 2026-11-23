@@ -19,18 +19,22 @@ namespace Trace.Evals;
 /// <summary>The command line is wrong; the message says how.</summary>
 public sealed class EvalUsageException(string message) : Exception(message);
 
+/// <param name="SourceDirectory">The repository as a local directory to index; null when <paramref name="SnapshotId"/> is given.</param>
+/// <param name="SnapshotId">An already indexed snapshot in the configured database to evaluate; null when a directory is given.</param>
 public sealed record EvalOptions(
     string DatasetPath,
-    string SourceDirectory,
+    string? SourceDirectory,
     string? OutputDirectory,
     string? Split,
     bool AllowRevisionMismatch,
     bool KeepDatabase,
-    string? ExpectationsPath = null);
+    string? ExpectationsPath = null,
+    Guid? SnapshotId = null);
 
 /// <summary>
-/// The tool's entry point and its <c>run</c> command: index a source directory into a throwaway database, run a dataset's
-/// questions against that snapshot through the production pipeline, and write one result file.
+/// The tool's entry point and its <c>run</c> command: put a snapshot into a throwaway database (by indexing a source
+/// directory, or by copying one that is already indexed), run a dataset's questions against it through the production
+/// pipeline, and write one result file.
 /// </summary>
 public static partial class EvalCommand
 {
@@ -47,6 +51,13 @@ public static partial class EvalCommand
     public const string DefaultOutputDirectory = "eval/results";
 
     /// <summary>
+    /// Where results go when an already indexed snapshot is evaluated. Such a snapshot is usually
+    /// of a private repository, and this directory is the one place for anything about those.
+    /// Relative to the repository root; git-ignored.
+    /// </summary>
+    public const string DefaultSnapshotOutputDirectory = "eval/local/results";
+
+    /// <summary>
     /// The tool is not a deployment: it serves no user and writes only to its own throwaway
     /// database. Its environment is therefore never Production, which is the only environment
     /// that refuses the deterministic fake providers.
@@ -61,16 +72,20 @@ public static partial class EvalCommand
     public const string Usage = """
         Usage:
           dotnet run --project tools/Trace.Evals -- run --dataset <file> --source <directory> [options]
+          dotnet run --project tools/Trace.Evals -- run --dataset <file> --snapshot <snapshot id> [options]
           dotnet run --project tools/Trace.Evals -- report <result file> [--output <directory>]
           dotnet run --project tools/Trace.Evals -- compare <baseline result file> <candidate result file> [--output <directory>]
           dotnet run --project tools/Trace.Evals -- check <result file> --expectations <file>
 
-        run: asks every question of a dataset against a snapshot of the source directory and
-        writes one result file.
+        run: asks every question of a dataset against one snapshot and writes one result file.
+        Give either --source or --snapshot.
 
           --dataset <file>            Labeled questions (see docs/evaluation.md).
           --source <directory>        The repository to index, as a local directory.
-          --output <directory>        Where the result file goes. Default: eval/results (git-ignored).
+          --snapshot <snapshot id>    A completed snapshot in the configured database, indexed
+                                      earlier through the application. It is copied, never changed.
+          --output <directory>        Where the result file goes. Default: eval/results, or
+                                      eval/local/results with --snapshot (both git-ignored).
           --split dev|test            Run only one split. Default: all questions.
           --expectations <file>       Run only the questions an expectations file lists.
           --allow-revision-mismatch   Run even if the source is not the revision the dataset names.
@@ -103,6 +118,7 @@ public static partial class EvalCommand
         string? output = null;
         string? split = null;
         string? expectations = null;
+        Guid? snapshot = null;
         var allowRevisionMismatch = false;
         var keepDatabase = false;
 
@@ -119,6 +135,11 @@ public static partial class EvalCommand
                     break;
                 case "--source":
                     source = Value();
+                    break;
+                case "--snapshot":
+                    snapshot = Guid.TryParseExact(Value(), "D", out var snapshotId) && snapshotId != Guid.Empty
+                        ? snapshotId
+                        : throw new EvalUsageException("'--snapshot' must be a snapshot ID such as 01234567-89ab-7cde-8f01-23456789abcd.");
                     break;
                 case "--output":
                     output = Value();
@@ -150,14 +171,22 @@ public static partial class EvalCommand
             throw new EvalUsageException("'--split' and '--expectations' cannot be combined: an expectations file already names its questions.");
         }
 
-        return new EvalOptions(
-            dataset ?? throw new EvalUsageException("'--dataset' is required."),
-            source ?? throw new EvalUsageException("'--source' is required."),
-            output,
-            split,
-            allowRevisionMismatch,
-            keepDatabase,
-            expectations);
+        if (source is not null && snapshot is not null)
+        {
+            throw new EvalUsageException("'--source' and '--snapshot' cannot be combined: a run evaluates one snapshot.");
+        }
+
+        if (dataset is null)
+        {
+            throw new EvalUsageException("'--dataset' is required.");
+        }
+
+        if (source is null && snapshot is null)
+        {
+            throw new EvalUsageException("'--source' or '--snapshot' is required.");
+        }
+
+        return new EvalOptions(dataset, source, output, split, allowRevisionMismatch, keepDatabase, expectations, snapshot);
     }
 
     /// <param name="configure">
@@ -192,7 +221,7 @@ public static partial class EvalCommand
             options = ParseArguments(args);
             dataset = EvalDataset.Load(options.DatasetPath);
             questionIds = options.ExpectationsPath is null ? null : EvalExpectations.Load(options.ExpectationsPath).SelectFrom(dataset);
-            if (!Directory.Exists(options.SourceDirectory))
+            if (options.SourceDirectory is not null && !Directory.Exists(options.SourceDirectory))
             {
                 throw new EvalUsageException($"The source directory '{options.SourceDirectory}' does not exist.");
             }
@@ -263,13 +292,16 @@ public static partial class EvalCommand
 
         var repositoryRoot = FindRepositoryRoot(Directory.GetCurrentDirectory());
         var outputDirectory = Path.GetFullPath(options.OutputDirectory
-            ?? Path.Combine(repositoryRoot ?? Directory.GetCurrentDirectory(), DefaultOutputDirectory));
+            ?? Path.Combine(
+                repositoryRoot ?? Directory.GetCurrentDirectory(),
+                options.SnapshotId is null ? DefaultOutputDirectory : DefaultSnapshotOutputDirectory));
         var (traceCommit, traceCommitDirty) = ReadTraceCommit(repositoryRoot);
 
         await using var database = await ThrowawayDatabase.CreateAsync(
             serverConnectionString, options.KeepDatabase, cancellationToken);
 
-        // From here on every service of the pipeline talks to the throwaway database only.
+        // From here on every service of the pipeline talks to the throwaway database only. With
+        // --snapshot the configured database is still read once, by IndexedSnapshotCopy below.
         configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             [$"ConnectionStrings:{InfrastructureServiceCollectionExtensions.ConnectionStringName}"] = database.ConnectionString,
@@ -285,30 +317,54 @@ public static partial class EvalCommand
         }
 
         Guid repositoryId;
-        IndexResult index;
+        Guid snapshotId;
+        string commitSha;
+        int chunkCount;
         await using (var scope = host.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<TraceDbContext>();
             await db.Database.MigrateAsync(cancellationToken);
 
             // Public and not from GitHub: the one kind of repository an anonymous caller may see.
+            // It is named after the dataset in both modes, never after the repository it came from.
             var repository = Repository.Create("trace-eval", dataset.Name, SourceBranch, RepositoryVisibility.Public);
             db.Repositories.Add(repository);
             await db.SaveChangesAsync(cancellationToken);
             repositoryId = repository.Id;
 
-            index = await scope.ServiceProvider.GetRequiredService<SnapshotIndexer>().IndexAsync(
-                repositoryId, new LocalDirectorySource(options.SourceDirectory, SourceBranch), cancellationToken);
+            if (options.SnapshotId is { } existing)
+            {
+                // The configured database is read here and nowhere else, and never written.
+                var copied = await IndexedSnapshotCopy.CopyAsync(serverConnectionString, existing, db, repositoryId, cancellationToken);
+                var embeddingModel = host.Services.GetRequiredService<IEmbeddingProvider>().ModelId;
+                if (copied.EmbeddingModel != embeddingModel)
+                {
+                    // Otherwise every search of the run would fail with embedding_model_mismatch.
+                    throw new EvalException(
+                        $"The snapshot was indexed with the embedding model '{copied.EmbeddingModel}' but this run is configured for "
+                        + $"'{embeddingModel}'. Set '{InfrastructureServiceCollectionExtensions.EmbeddingProviderKey}' to the provider "
+                        + "the snapshot was indexed with.");
+                }
+
+                (snapshotId, commitSha, chunkCount) = (copied.SnapshotId, copied.CommitSha, copied.ChunkCount);
+            }
+            else
+            {
+                var index = await scope.ServiceProvider.GetRequiredService<SnapshotIndexer>().IndexAsync(
+                    repositoryId, new LocalDirectorySource(options.SourceDirectory!, SourceBranch), cancellationToken);
+                (snapshotId, commitSha, chunkCount) = (index.SnapshotId, index.CommitSha, index.ChunkCount);
+            }
         }
 
         await output.WriteLineAsync(
-            $"Dataset {dataset.Name} v{dataset.Version}; snapshot {index.CommitSha[..12]} ({index.ChunkCount} passages); "
-            + $"model {model.ModelId}; database {database.Name}.");
+            $"Dataset {dataset.Name} v{dataset.Version}; snapshot {commitSha[..12]} ({chunkCount} passages"
+            + (options.SnapshotId is null ? string.Empty : ", copied from the configured database")
+            + $"); model {model.ModelId}; database {database.Name}.");
 
         var request = new EvalRunRequest(
             dataset,
             repositoryId,
-            index.SnapshotId,
+            snapshotId,
             configuration[InfrastructureServiceCollectionExtensions.ChatProviderKey]!,
             configuration[InfrastructureServiceCollectionExtensions.EmbeddingProviderKey]!,
             prices,

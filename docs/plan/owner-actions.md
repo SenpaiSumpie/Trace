@@ -33,3 +33,13 @@ The final step (M6.4) turns this into the owner checklist.
 **Deferred:** Nothing stubbed. Not verified: no red CI run was produced on GitHub on purpose, so the gate's non-zero exit is proven by tests and a local run only; the upload-on-failure path has not been exercised in a real failing run. The expectations describe fake-model behaviour and say nothing about answer quality or abstention. Whether a build should ever gate on a real-model baseline is left open (open question 77).
 
 - [ ] Optional: if you turn on branch protection for main, make the eval-smoke job a required check. No repository setting was changed.
+
+### M1.5 Real-model baseline on the fixture
+
+**Deferred:** Nothing stubbed. Limits of the result: one run, n=34, so run-to-run variation is unknown; the fixture has only 27 passages, so recall at 10 is close to guaranteed (the report gives ranks: 22 labels at rank 1, 5 at rank 2, worst 6); the fixture, questions and labels have one author; prices are not confirmed against a bill and the estimate was not compared with the Anthropic usage page; Voyage embedding tokens are not reported by the tool and are not costed; correctness was read by the agent (all 28 answers, eight checked statement by statement) and is not a measurement. The one abstention miss is the dev question password-hashing, where the model's answer is true of the fixture but the label says unanswerable; the dataset was not edited (open question 76). No resume or merge of partial runs was built because the pass finished in one go (open question 65). Voyage retry and multi-batch paths were not exercised.
+
+- [ ] Confirm the claude-opus-5-5 prices (input 4, output 20, cache read 0.4, cache write 5 USD per million tokens) against the Anthropic price page; if they differ, correct Eval:Prices:claude-opus-5-5 in tools/Trace.Evals/evalsettings.json.
+- [ ] Compare the Anthropic usage page for 2026-11-23 (about 374,620 input and 35,858 output tokens for this step) with the $1.72 estimate, and check Voyage usage for the same day.
+- [ ] Keep the git-ignored file eval/results/sample-repo-20261123T211248Z-7ec219d2.json; it is the raw baseline, and losing it means a new paid run before any question-by-question comparison.
+- [ ] Decide whether the fixture question password-hashing should be relabeled, reworded or dropped; the model's answer was true of the fixture but the label says unanswerable. Any change raises datasetVersion.
+- [ ] Do not use the held-out per-question results, now published in docs/eval/2026-11-23-fixture-baseline.md, for tuning.

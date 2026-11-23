@@ -25,7 +25,9 @@ list): `docs/open-questions.md`.
   questions, `report` computes the metrics of a result file, `compare` diffs two, `check` fails
   when a result file does not meet an expectations file (CI runs it on the smoke subset
   `tests/fixtures/sample-repo.smoke.json`). A command-line tool, not a host. Result files go
-  to the git-ignored `eval/results/`
+  to the git-ignored `eval/results/`. `run --snapshot <id>` evaluates a snapshot the
+  application already indexed, from a copy; everything about a private repository (dataset,
+  results, reports) lives under the git-ignored `eval/local/` and nowhere else
 - `infra/` — compose files and the Azure template (never deployed)
 
 A unit test enforces the dependency direction by reading the project files. Do not add a

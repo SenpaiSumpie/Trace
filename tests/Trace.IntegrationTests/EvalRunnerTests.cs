@@ -386,7 +386,7 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
 
         var error = new StringWriter();
         Assert.Equal(EvalCommand.ExitError, await EvalCommand.RunAsync(["run", "--dataset", broken], new StringWriter(), error, MustNotConfigure));
-        Assert.Contains("'--source' is required", error.ToString(), StringComparison.Ordinal);
+        Assert.Contains("'--source' or '--snapshot' is required", error.ToString(), StringComparison.Ordinal);
         Assert.Contains("Usage:", error.ToString(), StringComparison.Ordinal);
 
         error = new StringWriter();

@@ -5,11 +5,14 @@ question through the real investigation pipeline, and one result file per run.
 
 This page covers the dataset format, [how questions are added](#adding-questions), the
 [fixture's question set](#the-fixtures-question-set), the runner, the result file, the
-[metrics](#metrics) computed from a result file, [comparing two runs](#compare-two-runs) and
-[the smoke check](#the-smoke-check) that CI runs.
+[metrics](#metrics) computed from a result file, [comparing two runs](#compare-two-runs),
+[the smoke check](#the-smoke-check) that CI runs, and how to measure
+[a private repository](#a-private-repository) without anything about it entering this one.
 
 **Status:** the fixture's question set has been run once with the real providers (Claude and
-Voyage) on 2026-11-23; that run is [the baseline](#the-baseline). Everything else, CI
+Voyage) on 2026-11-23; that run is [the baseline](#the-baseline). A second baseline was run
+the same day on a draft question set for a private repository; its numbers are kept out of
+this repository ([a private repository](#a-private-repository)). Everything else, CI
 included, uses the fake providers. With the fake chat model the outcomes say that the plumbing
 works, not that answers are good: that model only points at passages sharing words with the
 question. With the fake embeddings recall says nothing about retrieval with a real embedding
@@ -40,8 +43,9 @@ nothing and takes a few seconds.
 | Option | Meaning |
 |---|---|
 | `--dataset <file>` | The labeled questions (format below). Required. |
-| `--source <directory>` | The repository to index, as a local directory. Required. |
-| `--output <directory>` | Where the result file goes. Default `eval/results/` in the repository root, which is git-ignored. |
+| `--source <directory>` | The repository to index, as a local directory. Either this or `--snapshot` is required. |
+| `--snapshot <snapshot id>` | Instead of `--source`: a completed snapshot in the configured database, indexed earlier through the application. It is copied into the run's database, never changed ([a private repository](#a-private-repository)). |
+| `--output <directory>` | Where the result file goes. Default `eval/results/` in the repository root, or `eval/local/results/` with `--snapshot`. Both are git-ignored. |
 | `--split dev\|test` | Run only one split. Default: every question. |
 | `--expectations <file>` | Run only the questions an expectations file lists ([the smoke check](#the-smoke-check)). Cannot be combined with `--split`. |
 | `--allow-revision-mismatch` | Run even though the source is not the revision the dataset names (see below). |
@@ -49,7 +53,8 @@ nothing and takes a few seconds.
 
 Exit code 0 means the run finished, **whatever the questions' outcomes were**: a failed
 question is a measurement, not an error of the tool. 1 means the run could not start or
-complete (bad arguments, invalid dataset or expectations file, database unreachable, revision mismatch). 2 means it
+complete (bad arguments, invalid dataset or expectations file, database unreachable, revision mismatch,
+no such snapshot). 2 means it
 was stopped early (Ctrl+C); the result file is still written.
 
 The output lists each question by ID with its outcome, counts and time. It never prints a
@@ -83,13 +88,16 @@ the provider's price page or a bill** (cache read is input x 0.1, cache write is
 ### The run's database
 
 Each run creates a database named `trace_eval_<random>` on the server that
-`ConnectionStrings:Trace` points at, applies the migrations, indexes the source directory
-into it, runs the questions, and drops it at the end (also after an error or Ctrl+C).
+`ConnectionStrings:Trace` points at, applies the migrations, puts one snapshot into it
+(by indexing the source directory, or with `--snapshot` by copying an indexed one), runs the
+questions, and drops it at the end (also after an error or Ctrl+C).
 
 The database named in the connection string, by default your development database `trace`,
-is used only as the place to connect in order to issue `CREATE DATABASE` and `DROP DATABASE`.
-Nothing in it is read or written, and only a database the run created itself is ever dropped.
-The database user must be allowed to create databases (the compose user is).
+is the place to connect in order to issue `CREATE DATABASE` and `DROP DATABASE`. With
+`--source` nothing in it is read or written. With `--snapshot` one snapshot and its passages
+are read from it, on connections the server keeps read-only; nothing is written to it. Only a
+database the run created itself is ever dropped. The database user must be allowed to create
+databases (the compose user is).
 
 If the process is killed outright, the database is left behind. List and remove leftovers with:
 
@@ -293,6 +301,120 @@ For a local directory the snapshot's revision is a content-derived ID over the i
 source has a different one, the run stops before asking anything: line labels would point at
 the wrong lines. `--allow-revision-mismatch` runs anyway and records the mismatch in the file.
 A dataset without a `revision` is never checked.
+
+## A private repository
+
+A repository of your own is measured from the snapshot the application already indexed, so
+nothing is cloned and nothing is embedded again
+([ADR-014](adr/ADR-014-evaluating-an-indexed-snapshot.md)). **Everything about it stays under
+the git-ignored `eval/local/`**: the dataset, the result files, the reports and your notes.
+This repository is public; its name, paths, questions and results must never be committed,
+and neither should a count or a number that would identify it.
+
+`eval/local/` is not in Git, so it is not backed up by a push. Copy it somewhere private.
+
+### 1. Find the snapshot
+
+Sign in to the application, install the GitHub App on the repository and press Index (the
+README's local setup). Then list the completed snapshots of the development database:
+
+```sh
+docker exec trace-postgres-1 psql -U trace -d trace -c "SELECT s.id AS snapshot_id, r.owner, r.name, s.commit_sha, s.embedding_model, s.completed_at, (SELECT count(*) FROM source_chunks c WHERE c.snapshot_id = s.id) AS passages FROM index_snapshots s JOIN repositories r ON r.id = s.repository_id WHERE s.status = 'completed' ORDER BY s.completed_at"
+```
+
+Note the `snapshot_id` and the `commit_sha`. The output names your repository: do not paste it
+anywhere public.
+
+### 2. Write the dataset
+
+Create `eval/local/<name>/<name>.questions.json` in the [dataset format](#dataset-format),
+following [Adding questions](#adding-questions): read the source first, write every question,
+label and split, and only then run anything.
+
+- `name`: any short name. It starts the result file's name, so it need not be the
+  repository's.
+- `revision`: the snapshot's `commit_sha`. A run against another revision is refused.
+- At least 15 questions, at least 3 of them unanswerable, in both splits.
+- Paths are spelled as in the repository, with forward slashes; line numbers are those of the
+  indexed commit.
+
+Labels written by someone who does not know the code (an agent, for example) are drafts:
+say so in the dataset's `description`, and review them before trusting a number.
+
+### 3. Run it
+
+With the fake chat model a snapshot run only works for a snapshot that was indexed with the
+fake embeddings. A snapshot indexed by the application with Voyage needs the real providers,
+which costs money: roughly $0.05 to $0.25 a question at the shipped prices, depending on how
+much the model reads. Put `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` in the process environment
+as for [the fixture baseline](#running-with-the-real-models), then:
+
+```sh
+Chat__Provider=anthropic Embeddings__Provider=voyage dotnet run --project tools/Trace.Evals -- run --dataset eval/local/<name>/<name>.questions.json --snapshot <snapshot id> --output eval/local/<name>/results
+```
+
+(In PowerShell set `$env:Chat__Provider = 'anthropic'` and `$env:Embeddings__Provider = 'voyage'`
+first.) Try one development question before the whole set: write an
+[expectations file](#the-expectations-file) under `eval/local/<name>/` that lists one question
+ID and add `--expectations <file>`.
+
+What the run does to your data:
+
+- The snapshot's passages and embeddings are copied into the run's own database under a
+  repository named after the dataset. The copy is dropped with that database when the run
+  ends (unless `--keep-database`).
+- Your development database is read, never written: no investigation, event or evidence is
+  added, nothing shows up in the application, and the application's daily token budget is not
+  touched. The run has a budget of its own (`Chat:DailyTokenBudget`), counted from zero.
+- The questions and the passages the model retrieves are sent to Anthropic, and each question
+  to Voyage, exactly as when you ask through the application. Nothing is sent anywhere else.
+- The run fails before its first question if the snapshot does not exist, is not completed,
+  or was indexed with another embedding model than the run is configured for.
+
+The console output names the dataset, the first 12 characters of the commit and question IDs.
+The result file holds paths, excerpts and answers.
+
+### 4. Report and compare
+
+```sh
+dotnet run --project tools/Trace.Evals -- report eval/local/<name>/results/<result file>.json
+dotnet run --project tools/Trace.Evals -- compare eval/local/<name>/results/<baseline>.json eval/local/<name>/results/<candidate>.json
+```
+
+Both write next to the result file, so their output stays under `eval/local/` too. Write the
+baseline as a dated Markdown file there, with the same contents as
+[the fixture's](eval/2026-11-23-fixture-baseline.md), plus a reading of some answers against
+the source.
+
+After correcting a label, change `datasetVersion` and run again; `compare` warns when two
+files are of different dataset versions, and a changed question shows as such.
+
+### 5. Before every commit
+
+```sh
+git status --short --ignored eval
+```
+
+must show `eval/local/` (or `eval/`) only as ignored (`!!`). If you wrote about the
+repository anywhere else, search the staged diff for its name and its paths before
+committing:
+
+```sh
+git diff --cached | grep -n -i -F -f eval/local/<name>/private-strings.txt
+```
+
+where the file holds one distinctive string per line (the name, every indexed path, some
+identifiers). It must print nothing.
+
+### The private baseline
+
+One private repository of the owner's has a draft set of 19 questions (15 answerable, 4
+unanswerable; development and held-out splits), written by an agent from the indexed snapshot
+before anything was run, and one baseline run with `claude-opus-5-5` and `voyage-code-3` on
+2026-11-23. The dataset, the result file and the report are under `eval/local/` on the
+owner's machine only, and its numbers are deliberately not published here. **The labels are
+drafts awaiting the owner's review**: until then the baseline says that the workflow works,
+not how good the answers are.
 
 ## Result file
 
@@ -575,12 +697,13 @@ is synthetic and public.
 
 ## What is not there yet
 
-- **One baseline run, on the fixture only.** There is no repeat run, so nothing says how much
-  the numbers vary between runs, and no baseline for a real repository.
+- **One baseline run per set.** There is no repeat run, so nothing says how much the numbers
+  vary between runs. The baseline for a real repository rests on draft labels that its owner
+  has not reviewed, and its numbers are not in this repository.
 - **The cost is an unchecked estimate.** The prices are not confirmed, and the estimate has
   been checked against hand-computed numbers but never against the provider's usage page.
-  Embedding tokens are not recorded or priced, and with a real embedding provider every run
-  indexes the source again, which costs money each time.
+  Embedding tokens are not recorded or priced, and with a real embedding provider every
+  `--source` run indexes the source again, which costs money each time (`--snapshot` does not).
 - **No way to run a chosen list of held-out questions or to merge two result files.** A real
   run that dies partway would have to be reported as partial.
 - **No measure of answer correctness.** For the baseline the answers were read by hand.
@@ -589,6 +712,7 @@ is synthetic and public.
 - **CI checks six fake-model questions and nothing more.** The smoke check is absolute: it
   cannot see a number getting worse inside what the expectations allow, it never runs a real
   model, and nothing fails a build on a regression between two runs.
-- **Local directories only.** A repository indexed from GitHub cannot be evaluated yet; check
-  it out and pass the directory.
+- **A snapshot run needs the database it was indexed in**, at the same schema version as the
+  tool, and the embedding provider it was indexed with. There is no command that lists
+  snapshots; the query above does. `run --snapshot` has been used on one repository.
 - **No history table.** The handoff's `eval_runs` table does not exist; a run is a file.
