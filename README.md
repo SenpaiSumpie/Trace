@@ -62,6 +62,7 @@ line range. The full specification is in
 Not implemented: issue-to-plan, a telemetry backend with dashboards or alerts, a
 deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
+What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).
 The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
 
 ## Prerequisites
