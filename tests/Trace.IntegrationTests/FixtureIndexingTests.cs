@@ -14,7 +14,7 @@ public class FixtureIndexingTests(PostgresFixture postgres) : IAsyncLifetime
     /// Content-derived revision ID of the checked-in fixture. It must be identical on every
     /// platform; update it deliberately whenever the fixture's indexed files change.
     /// </summary>
-    private const string FixtureRevision = "ee02b2da366aa000b30541463014b895d5cebb67";
+    private const string FixtureRevision = "4a07032f452579445ba5be2a05d574028b69754d";
 
     private TestDatabase database = null!;
     private TraceDbContext db = null!;
@@ -117,15 +117,22 @@ public class FixtureIndexingTests(PostgresFixture postgres) : IAsyncLifetime
                 ["README.md"] = "markdown",
                 ["docs/CONTRIBUTING.md"] = "markdown",
                 ["docs/adr/0001-page-size-cap.md"] = "markdown",
+                ["docs/adr/0002-in-memory-storage.md"] = "markdown",
+                ["docs/operations.md"] = "markdown",
                 ["src/TaskBoard.Api/Auth/ApiKeyMiddleware.cs"] = "csharp",
+                ["src/TaskBoard.Api/Notifications/WebhookNotifier.cs"] = "csharp",
                 ["src/TaskBoard.Api/Program.cs"] = "csharp",
+                ["src/TaskBoard.Api/RateLimiting/RequestThrottle.cs"] = "csharp",
                 ["src/TaskBoard.Api/Reports/ReportQueue.cs"] = "csharp",
                 ["src/TaskBoard.Api/Reports/ReportWorker.cs"] = "csharp",
                 ["src/TaskBoard.Api/Tasks/PageRequest.cs"] = "csharp",
                 ["src/TaskBoard.Api/Tasks/TaskItem.cs"] = "csharp",
                 ["src/TaskBoard.Api/Tasks/TaskRepository.cs"] = "csharp",
+                ["src/TaskBoard.Api/Tasks/TitleRules.cs"] = "csharp",
                 ["src/TaskBoard.Api/appsettings.json"] = "json",
                 ["tests/TaskBoard.Tests/PageRequestTests.cs"] = "csharp",
+                ["tests/TaskBoard.Tests/TaskRepositoryTests.cs"] = "csharp",
+                ["web/src/NewTaskForm.tsx"] = "typescript",
                 ["web/src/TaskList.tsx"] = "typescript",
                 ["web/src/api.ts"] = "typescript",
             },

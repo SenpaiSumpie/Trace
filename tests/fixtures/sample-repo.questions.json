@@ -1,8 +1,8 @@
 {
   "name": "sample-repo",
-  "datasetVersion": "1",
-  "description": "Labeled retrieval questions for tests/fixtures/sample-repo. Each question lists the source ranges a correct answer must be grounded in. Kept outside the fixture directory so the labels are never indexed. 'dev' questions may be used while tuning retrieval; 'test' questions must not be.",
-  "fixtureRevision": "ee02b2da366aa000b30541463014b895d5cebb67",
+  "datasetVersion": "2",
+  "description": "Labeled questions for tests/fixtures/sample-repo. Each answerable question lists the source ranges a correct answer must be grounded in; a question with \"answerable\": false is one the repository cannot answer, and the right result for it is 'not enough evidence'. Kept outside the fixture directory so the labels are never indexed. 'dev' questions may be used while tuning; 'test' questions are held out and must not be. Version 2 (step M1.3) added 23 questions, 7 of them unanswerable; how questions are added is in docs/evaluation.md.",
+  "fixtureRevision": "4a07032f452579445ba5be2a05d574028b69754d",
   "questions": [
     {
       "id": "pagination-offset",
@@ -69,6 +69,163 @@
       "split": "test",
       "question": "Does report rendering stop when the service is shutting down?",
       "expected": [{ "path": "src/TaskBoard.Api/Reports/ReportWorker.cs", "startLine": 26, "endLine": 35 }]
+    },
+    {
+      "id": "title-max-length",
+      "split": "dev",
+      "question": "What is the longest title the API accepts for a task?",
+      "expected": [
+        { "path": "src/TaskBoard.Api/Tasks/TitleRules.cs", "startLine": 6, "endLine": 6 },
+        { "path": "src/TaskBoard.Api/Tasks/TitleRules.cs", "startLine": 18, "endLine": 22 }
+      ]
+    },
+    {
+      "id": "webhook-attempts",
+      "split": "dev",
+      "question": "How many times is a webhook delivery attempted before giving up?",
+      "expected": [
+        { "path": "src/TaskBoard.Api/Notifications/WebhookNotifier.cs", "startLine": 10, "endLine": 10 },
+        { "path": "src/TaskBoard.Api/Notifications/WebhookNotifier.cs", "startLine": 24, "endLine": 24 }
+      ]
+    },
+    {
+      "id": "rate-limit-per-minute",
+      "split": "dev",
+      "question": "How many requests per minute may one API key make?",
+      "expected": [{ "path": "src/TaskBoard.Api/RateLimiting/RequestThrottle.cs", "startLine": 6, "endLine": 6 }]
+    },
+    {
+      "id": "restart-data-loss",
+      "split": "dev",
+      "question": "What happens to the stored tasks when the service restarts?",
+      "expected": [{ "path": "docs/adr/0002-in-memory-storage.md", "startLine": 10, "endLine": 15 }]
+    },
+    {
+      "id": "api-key-rotation",
+      "split": "dev",
+      "question": "What are the steps to rotate the API key?",
+      "expected": [{ "path": "docs/operations.md", "startLine": 12, "endLine": 16 }]
+    },
+    {
+      "id": "worker-idle-delay",
+      "split": "dev",
+      "question": "How long does the report worker wait before checking an empty queue again?",
+      "expected": [
+        { "path": "src/TaskBoard.Api/Reports/ReportWorker.cs", "startLine": 9, "endLine": 9 },
+        { "path": "src/TaskBoard.Api/Reports/ReportWorker.cs", "startLine": 16, "endLine": 20 }
+      ]
+    },
+    {
+      "id": "add-button-disabled",
+      "split": "dev",
+      "question": "When is the Add task button disabled?",
+      "expected": [{ "path": "web/src/NewTaskForm.tsx", "startLine": 29, "endLine": 29 }]
+    },
+    {
+      "id": "password-hashing",
+      "split": "dev",
+      "question": "How does TaskBoard hash user passwords?",
+      "answerable": false,
+      "notes": "The service has API keys only: no users and no passwords anywhere in the repository."
+    },
+    {
+      "id": "latency-target",
+      "split": "dev",
+      "question": "What is the 95th percentile latency target for listing tasks?",
+      "answerable": false,
+      "notes": "ADR 0001 mentions one slow response but no target or objective is stated anywhere."
+    },
+    {
+      "id": "on-call-contact",
+      "split": "dev",
+      "question": "Who is on call for TaskBoard and how are they paged?",
+      "answerable": false,
+      "notes": "docs/operations.md names no person, rota or paging tool."
+    },
+    {
+      "id": "title-line-break",
+      "split": "test",
+      "question": "Can a task title contain a line break?",
+      "expected": [{ "path": "src/TaskBoard.Api/Tasks/TitleRules.cs", "startLine": 24, "endLine": 29 }]
+    },
+    {
+      "id": "webhook-signature",
+      "split": "test",
+      "question": "How is the webhook request signed so the receiver can verify it?",
+      "expected": [
+        { "path": "src/TaskBoard.Api/Notifications/WebhookNotifier.cs", "startLine": 30, "endLine": 30 },
+        { "path": "src/TaskBoard.Api/Notifications/WebhookNotifier.cs", "startLine": 56, "endLine": 61 }
+      ]
+    },
+    {
+      "id": "webhook-not-configured",
+      "split": "test",
+      "question": "What does the service do when a task is completed but no webhook URL is configured?",
+      "expected": [{ "path": "src/TaskBoard.Api/Notifications/WebhookNotifier.cs", "startLine": 15, "endLine": 20 }]
+    },
+    {
+      "id": "rate-limit-response",
+      "split": "test",
+      "question": "What response does a client get after exceeding the rate limit?",
+      "expected": [{ "path": "src/TaskBoard.Api/RateLimiting/RequestThrottle.cs", "startLine": 33, "endLine": 39 }]
+    },
+    {
+      "id": "single-instance",
+      "split": "test",
+      "question": "Why can only one instance of the API run at a time?",
+      "expected": [{ "path": "docs/adr/0002-in-memory-storage.md", "startLine": 16, "endLine": 16 }]
+    },
+    {
+      "id": "health-stuck-worker",
+      "split": "test",
+      "question": "Does the health endpoint detect a stuck report worker?",
+      "expected": [{ "path": "docs/operations.md", "startLine": 7, "endLine": 8 }]
+    },
+    {
+      "id": "missing-task-test",
+      "split": "test",
+      "question": "Is there a unit test for completing a task that does not exist?",
+      "expected": [{ "path": "tests/TaskBoard.Tests/TaskRepositoryTests.cs", "startLine": 20, "endLine": 26 }]
+    },
+    {
+      "id": "pull-request-checklist",
+      "split": "test",
+      "question": "What must a contributor do before opening a pull request?",
+      "expected": [{ "path": "docs/CONTRIBUTING.md", "startLine": 3, "endLine": 4 }]
+    },
+    {
+      "id": "failed-create-keeps-text",
+      "split": "test",
+      "question": "What happens to the text the user typed when creating a task fails?",
+      "expected": [{ "path": "web/src/NewTaskForm.tsx", "startLine": 17, "endLine": 19 }]
+    },
+    {
+      "id": "deployment-region",
+      "split": "test",
+      "question": "Which cloud region is the service deployed to?",
+      "answerable": false,
+      "notes": "Nothing in the repository says where it runs; the README says it is not meant to be deployed."
+    },
+    {
+      "id": "license",
+      "split": "test",
+      "question": "Under which license is TaskBoard released?",
+      "answerable": false,
+      "notes": "There is no license file and no license statement."
+    },
+    {
+      "id": "dotnet-version",
+      "split": "test",
+      "question": "Which version of .NET does the API project target?",
+      "answerable": false,
+      "notes": "The fixture has no project file, SDK pin or version statement."
+    },
+    {
+      "id": "ci-pipeline",
+      "split": "test",
+      "question": "Which CI system builds the project and which steps does its pipeline run?",
+      "answerable": false,
+      "notes": "There are no pipeline or workflow files; CONTRIBUTING only asks contributors to run the tests themselves."
     }
   ]
 }

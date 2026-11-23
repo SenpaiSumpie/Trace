@@ -12,7 +12,7 @@ public class RetrievalTests(IndexedSampleRepo indexed) : IClassFixture<IndexedSa
     private static readonly LabeledQuestionSet Labels = LabeledQuestionSet.Load();
 
     public static TheoryData<string> DevQuestionIds =>
-        [.. Labels.Questions.Where(question => question.Split == "dev").Select(question => question.Id)];
+        [.. Labels.Questions.Where(question => question.Split == "dev" && question.Answerable).Select(question => question.Id)];
 
     [Fact]
     public void Labels_were_written_for_the_indexed_fixture_revision()
@@ -22,7 +22,10 @@ public class RetrievalTests(IndexedSampleRepo indexed) : IClassFixture<IndexedSa
         Assert.Contains(Labels.Questions, question => question.Split == "test");
     }
 
-    /// <summary>Regression gate: every development question finds its range in the top 5 of 17 chunks.</summary>
+    /// <summary>
+    /// Regression gate: every answerable development question finds its ranges in the top 5 of
+    /// the fixture's 27 passages. Unanswerable questions have no range to find.
+    /// </summary>
     [Theory]
     [MemberData(nameof(DevQuestionIds))]
     public async Task Dev_question_retrieves_its_expected_ranges_in_the_top_5(string questionId)
@@ -35,24 +38,34 @@ public class RetrievalTests(IndexedSampleRepo indexed) : IClassFixture<IndexedSa
     }
 
     /// <summary>
-    /// Baseline over the whole labeled set, held-out questions included. The floors are the
-    /// measured baseline with the deterministic fake embeddings (recall@5 = 9/11, recall@10 =
-    /// 10/11), so this guards against regressions; it is not a claim about retrieval quality.
-    /// The two known misses need semantic matching that a bag-of-words fake cannot provide.
+    /// Baseline over the answerable questions of the labeled set, held-out ones included. The
+    /// floors are the measured baseline with the deterministic fake embeddings, so this guards
+    /// against regressions; it is not a claim about retrieval quality.
+    ///
+    /// The counts changed in step M1.3 because the fixture and the question set grew (17 to 27
+    /// passages, 11 to 34 questions of which 27 are answerable); no search setting changed.
+    /// Before: every range in the top 5 for 9 of 11 questions, in the top 10 for 10 of 11.
+    /// Now: 24 of 27 and 26 of 27. Of the original 11, <c>client-api-key</c> moved from the top
+    /// 5 to rank 8 because the new files also talk about API keys; <c>configured-page-size</c>
+    /// (not in the top 10) and <c>last-page-ui</c> (rank 9) were already outside the top 5.
+    /// These three are held-out questions and need semantic matching that a bag-of-words fake
+    /// cannot provide; nothing was tuned to move them.
     /// </summary>
     [Fact]
     public async Task Labeled_set_meets_the_recorded_recall_baseline()
     {
         var ranks = new Dictionary<string, int>();
-        foreach (var question in Labels.Questions)
+        foreach (var question in Labels.Questions.Where(question => question.Answerable))
         {
             ranks[question.Id] = await RankOfExpectedAsync(question);
         }
 
         var report = string.Join(", ", ranks.Select(entry => $"{entry.Key}={entry.Value}"));
-        Assert.True(ranks.Values.Count(rank => rank is >= 1 and <= 5) >= 9, $"recall@5 fell below 9/11: {report}");
-        Assert.True(ranks.Values.Count(rank => rank is >= 1 and <= 10) >= 10, $"recall@10 fell below 10/11: {report}");
+        Assert.Equal(27, ranks.Count);
+        Assert.True(ranks.Values.Count(rank => rank is >= 1 and <= 5) >= 24, $"recall@5 fell below 24/27: {report}");
+        Assert.True(ranks.Values.Count(rank => rank is >= 1 and <= 10) >= 26, $"recall@10 fell below 26/27: {report}");
     }
+
     [Fact]
     public async Task Results_are_ranked_bounded_and_pinned_to_the_snapshot_commit()
     {
@@ -233,7 +246,7 @@ public class RetrievalTests(IndexedSampleRepo indexed) : IClassFixture<IndexedSa
     {
         var result = await indexed.SearchAsync(question.Question, SourceTools.MaxSearchLimit);
 
-        return question.Expected.Max(expected =>
+        return question.Locations.Max(expected =>
         {
             var index = result.Hits.ToList().FindIndex(hit => hit.Path == expected.Path
                 && hit.StartLine <= expected.EndLine

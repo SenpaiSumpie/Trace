@@ -3,7 +3,8 @@
 How TRACE's answers are measured: a dataset of labeled questions, a runner that puts every
 question through the real investigation pipeline, and one result file per run.
 
-This page covers the dataset format, the runner, the result file, the
+This page covers the dataset format, [how questions are added](#adding-questions), the
+[fixture's question set](#the-fixtures-question-set), the runner, the result file, the
 [metrics](#metrics) computed from a result file and [comparing two runs](#compare-two-runs).
 
 **Status:** everything here has only ever been run with the fake providers on the fixture
@@ -29,7 +30,7 @@ From the repository root, with the local database running
 dotnet run --project tools/Trace.Evals -- run --dataset tests/fixtures/sample-repo.questions.json --source tests/fixtures/sample-repo
 ```
 
-This indexes the fixture into a new database, asks its 11 questions with the fake providers,
+This indexes the fixture into a new database, asks its 34 questions with the fake providers,
 writes `eval/results/sample-repo-<UTC time>-<run id>.json` and drops the database. It costs
 nothing and takes a few seconds.
 
@@ -114,9 +115,9 @@ properties are an error, so a misspelt label cannot be silently ignored.
 ```json
 {
   "name": "sample-repo",
-  "datasetVersion": "1",
+  "datasetVersion": "2",
   "description": "Free text.",
-  "revision": "ee02b2da366aa000b30541463014b895d5cebb67",
+  "revision": "4a07032f452579445ba5be2a05d574028b69754d",
   "questions": [
     {
       "id": "pagination-offset",
@@ -148,14 +149,95 @@ properties are an error, so a misspelt label cannot be silently ignored.
 | `questions[].answerable` | no | Default `true`. `false` marks a question the repository cannot answer: the right result is "not enough evidence", and `expected` must be absent or empty. **Added by this format.** |
 | `questions[].notes` | no | Free text for whoever maintains the labels. **Added by this format.** |
 
-Rules for writing one:
+Where a dataset lives:
 
-- Write the question and its labels from reading the source, before running retrieval or the
-  runner on it. Do not edit a label after seeing a result, except to fix a labeling mistake.
 - Keep the file **outside** the directory that gets indexed, so the labels are never
   retrieved as evidence.
 - A dataset about a private repository goes under `eval/local/` (git-ignored), and so does
   anything else naming it. This repository is public.
+
+### Adding questions
+
+The order matters more than anything else here: a label written after looking at what the
+search returns measures the labeler's agreement with the search, not the search.
+
+1. **Read the source first.** If the repository cannot support the question you want to ask,
+   and it is the fixture, add realistic invented content to it before writing the question
+   (see [changing the fixture](#changing-the-fixture)).
+2. **Write the question, its labels and its split** into the dataset file:
+   - Ask it the way a person who has not read the code would. Avoid copying identifiers or
+     whole phrases from the lines you are about to label: a question that shares its label's
+     wording is found by word matching alone.
+   - Label the smallest range that settles the question, and every place a correct answer
+     needs, not every place that mentions the topic. Take line numbers from the file as
+     checked in.
+   - An unanswerable question (`"answerable": false`) asks for a fact the repository does not
+     hold, and that someone could plausibly expect it to hold. Search the source for the
+     terms a real answer would use and make sure nothing settles it. Say in `notes` why it
+     cannot be answered. Avoid questions whose honest answer is "the code shows there is no
+     such thing": whether that is an answer or an abstention is a judgment.
+   - Choose the split now. `dev` questions may be looked at while tuning search, chunking or
+     prompts. `test` questions are held out: never tune on them, and never move a question
+     between splits after seeing a result for it.
+   - A new question must not repeat an existing one in other words.
+3. **Change `datasetVersion`.** Results are only compared like for like within one version.
+4. **Only now run** the search, the runner or the tests that use the labels.
+5. **After that, leave the question alone.** Do not change its wording, labels or split
+   because of a result. The one exception is a labeling mistake, such as a wrong line number:
+   fix it, change `datasetVersion` again, and say in the commit message which label changed
+   and why.
+6. For the fixture, update the counts that tests pin (`EvalDatasetTests`, `EvalRunnerTests`,
+   `RetrievalTests`) and write the reason next to them. A retrieval floor is a measured
+   baseline: restate it for the new set, never lower it to hide a regression.
+
+`EvalDatasetTests` checks the fixture's set on every build: at least 25 questions, at least
+5 unanswerable and at least 8 held-out, unique IDs and wordings, both kinds of question in
+both splits, and every labeled path and line range present in the fixture.
+
+### Changing the fixture
+
+`tests/fixtures/sample-repo` is synthetic. Everything in it is invented for TRACE; nothing may
+be copied from a real or private project, and a sample key must be built from obviously fake
+pieces.
+
+Add content rather than editing it: a line inserted above a labeled range moves the range.
+Any change to an indexed file changes the fixture's content-derived revision, which is pinned
+in the dataset (`fixtureRevision`), in `FixtureIndexingTests` and `EvalDatasetTests`, in the
+example above and in the browser tests (`apps/web/e2e/ask.spec.ts`, which run against the
+indexed fixture). `FixtureIndexingTests` also lists every indexed file, and
+`CitationValidationTests` pins the length of the fixture's README.
+
+### The fixture's question set
+
+`tests/fixtures/sample-repo.questions.json`, version 2
+([ADR-011](adr/ADR-011-fixture-question-set.md)):
+
+| | All | `dev` | `test` (held out) |
+|---|---|---|---|
+| Questions | 34 | 15 | 19 |
+| Answerable | 27 | 12 | 15 |
+| Unanswerable | 7 | 3 | 4 |
+| Labeled locations | 31 | 15 | 16 |
+
+The fixture is 21 files and 27 passages. Version 1 had 11 questions, all answerable; they are
+unchanged in version 2. The 13 new `test` questions have never been used to choose anything.
+The 6 older ones were looked at once ([open question 25](open-questions.md)).
+
+With the fake providers (2026-11-23, dataset version 2):
+
+| Metric | All | `dev` | `test` |
+|---|---|---|---|
+| Retrieval recall at 10 | 96.8% (30 of 31) | 100.0% (15 of 15) | 93.8% (15 of 16) |
+| Citation validity | 100.0% (102 of 102) | 100.0% (45 of 45) | 100.0% (57 of 57) |
+| Abstention precision | n/a (0 abstentions) | n/a | n/a |
+| Abstention recall | 0.0% (0 of 7) | 0.0% (0 of 3) | 0.0% (0 of 4) |
+| Answers citing a labeled location | 81.5% (22 of 27) | 91.7% (11 of 12) | 73.3% (11 of 15) |
+
+**These are fake-model numbers.** The fake chat model does not read: it cites the first
+passages its one search returns and abstains only when the search returns nothing, which is
+why it answered all 7 unanswerable questions. The fake embeddings are a bag of words. The
+table shows that the set can be run and scored, and gives the regression tests their floors.
+It is not a baseline; that needs the real models (step M1.5).
 
 ### The revision check
 
@@ -273,8 +355,9 @@ Known limits of these definitions:
   not its text was ever shown to the model.
 - There is no measure of whether an answer's text is correct (the handoff's "factual
   grounding"). That needs a person or a judge model.
-- The fixture has no unanswerable questions yet, so both abstention numbers are `n/a` for it
-  (step M1.3 adds some).
+- With the fake chat model the abstention numbers say nothing about a real model: the fake
+  abstains only when its search returns nothing
+  ([the fixture's question set](#the-fixtures-question-set)).
 
 ## Report
 

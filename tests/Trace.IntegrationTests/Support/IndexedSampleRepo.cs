@@ -54,7 +54,17 @@ public sealed class IndexedSampleRepo(PostgresFixture postgres) : IAsyncLifetime
 
 public sealed record LabeledRange(string Path, int StartLine, int EndLine);
 
-public sealed record LabeledQuestion(string Id, string Split, string Question, IReadOnlyList<LabeledRange> Expected);
+/// <param name="Expected">The labeled locations; absent for a question the repository cannot answer.</param>
+/// <param name="Answerable">False for a question whose right result is "not enough evidence".</param>
+public sealed record LabeledQuestion(
+    string Id,
+    string Split,
+    string Question,
+    IReadOnlyList<LabeledRange>? Expected = null,
+    bool Answerable = true)
+{
+    public IReadOnlyList<LabeledRange> Locations => Expected ?? [];
+}
 
 public sealed record LabeledQuestionSet(string DatasetVersion, string FixtureRevision, IReadOnlyList<LabeledQuestion> Questions)
 {

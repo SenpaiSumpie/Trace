@@ -13,6 +13,7 @@ All endpoints except `/health` require the `X-Api-Key` header.
 | `GET` | `/health` | Liveness probe. No authentication. |
 | `GET` | `/tasks?page=1&pageSize=20` | Lists tasks, oldest first. Pages are 1-based. |
 | `POST` | `/tasks` | Creates a task. |
+| `POST` | `/tasks/{id}/complete` | Marks a task as completed. |
 | `POST` | `/reports` | Queues a summary report and returns its ID. |
 
 ## Layout
@@ -21,6 +22,7 @@ All endpoints except `/health` require the `X-Api-Key` header.
 - `web` — React client.
 - `tests/TaskBoard.Tests` — unit tests.
 - `docs/adr` — architecture decision records.
+- `docs/operations.md` — notes for running an instance.
 
 ## Configuration
 

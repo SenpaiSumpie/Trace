@@ -50,8 +50,11 @@ Done when:
       index version, model and prompt version
       (the command exists and stores all of this, see [evaluation.md](evaluation.md); it has
       only been run with the fake models, so this box stays open until a real-model run)
-- [ ] The fixture repository has at least 25 labeled questions, split into development and
+- [x] The fixture repository has at least 25 labeled questions, split into development and
       held-out sets, including at least 5 that cannot be answered
+      (34 questions: 15 development, 19 held-out, 7 unanswerable; see
+      [evaluation.md](evaluation.md#the-fixtures-question-set). Only ever run with the fake
+      models)
 - [ ] A second labeled set of at least 15 questions exists for one real repository of yours
 - [ ] A baseline is recorded for each handoff metric that applies to questions: retrieval
       recall at 10, citation validity, correct "not enough evidence" results, cost and time

@@ -4,7 +4,7 @@ test('ask the fixture repository a question and inspect the evidence', async ({ 
   await page.goto('/')
 
   // The demo repository is selected, pinned to its indexed revision.
-  await expect(page.getByLabel('Repository')).toContainText('trace-demo/sample-repo at ee02b2da366a')
+  await expect(page.getByLabel('Repository')).toContainText('trace-demo/sample-repo at 4a07032f4525')
   await expect(page.getByRole('button', { name: 'Ask' })).toBeDisabled()
 
   await page.getByLabel('Question').fill('Why does the first page of the task list skip the first results?')
@@ -25,7 +25,7 @@ test('ask the fixture repository a question and inspect the evidence', async ({ 
   expect(passageBox.x + passageBox.width).toBeLessThanOrEqual(columnBox.x + columnBox.width)
 
   // Every step the investigation took is listed.
-  const steps = page.getByRole('list').filter({ hasText: 'Started investigating at commit ee02b2da366a.' })
+  const steps = page.getByRole('list').filter({ hasText: 'Started investigating at commit 4a07032f4525.' })
   await expect(steps.getByRole('listitem')).toHaveCount(3)
   await expect(steps).toContainText('Searched the code for')
   await expect(steps).toContainText('Answered with')
@@ -50,12 +50,12 @@ test('index the demo repository again from the page', async ({ page }) => {
   await page.goto('/')
 
   const row = page.getByRole('listitem').filter({ hasText: 'trace-demo/sample-repo' })
-  await expect(row).toContainText('Indexed at commit ee02b2da366a')
+  await expect(row).toContainText('Indexed at commit 4a07032f4525')
 
   await row.getByRole('button', { name: 'Index again' }).click()
 
   await expect(row.getByText('Indexing finished.')).toBeVisible()
-  await expect(row).toContainText('Indexed at commit ee02b2da366a')
+  await expect(row).toContainText('Indexed at commit 4a07032f4525')
   await expect(row.getByRole('button', { name: 'Index again' })).toBeEnabled()
 })
 

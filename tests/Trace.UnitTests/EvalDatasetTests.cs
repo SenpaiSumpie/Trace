@@ -4,25 +4,82 @@ namespace Trace.UnitTests;
 
 public class EvalDatasetTests
 {
-    private const string Revision = "ee02b2da366aa000b30541463014b895d5cebb67";
+    private const string Revision = "4a07032f452579445ba5be2a05d574028b69754d";
 
     [Fact]
     public void The_checked_in_fixture_questions_are_a_valid_dataset()
     {
         var dataset = EvalDataset.Load(Path.Combine(RepositoryRoot(), "tests", "fixtures", "sample-repo.questions.json"));
 
-        Assert.Equal(("sample-repo", "1", Revision), (dataset.Name, dataset.Version, dataset.Revision));
-        Assert.Equal(11, dataset.Questions.Count);
+        Assert.Equal(("sample-repo", "2", Revision), (dataset.Name, dataset.Version, dataset.Revision));
+        Assert.Equal(34, dataset.Questions.Count);
         Assert.All(dataset.Questions, question =>
         {
-            Assert.True(question.Answerable);
-            Assert.NotEmpty(question.Expected);
+            Assert.Equal(question.Answerable, question.Expected.Count > 0);
             Assert.Contains(question.Split, new[] { EvalDataset.DevSplit, EvalDataset.TestSplit });
         });
 
         var first = dataset.Questions[0];
         Assert.Equal(("pagination-offset", "dev"), (first.Id, first.Split));
         Assert.Equal(new EvalRange("src/TaskBoard.Api/Tasks/TaskRepository.cs", 20, 29), Assert.Single(first.Expected));
+    }
+
+    /// <summary>
+    /// The milestone's size requirements, and what makes a label usable: it must point at lines
+    /// that exist in the fixture as checked in, or recall is measured against nothing.
+    /// </summary>
+    [Fact]
+    public void The_fixture_questions_are_enough_have_both_splits_and_every_label_points_at_real_lines()
+    {
+        var fixture = Path.Combine(RepositoryRoot(), "tests", "fixtures", "sample-repo");
+        var dataset = EvalDataset.Load(fixture + EvalDataset.FileSuffix);
+        var questions = dataset.Questions;
+
+        Assert.False(string.IsNullOrWhiteSpace(dataset.Version));
+        Assert.True(questions.Count >= 25, $"{questions.Count} questions; at least 25 are required.");
+        Assert.True(questions.Count(question => !question.Answerable) >= 5, "At least 5 unanswerable questions are required.");
+        Assert.True(questions.Count(question => question.Split == EvalDataset.TestSplit) >= 8, "At least 8 held-out questions are required.");
+        Assert.Equal(questions.Count, questions.Select(question => question.Id).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(questions.Count, questions.Select(question => question.Question).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+
+        // Both splits exist, and each has questions of both kinds, so every metric can be
+        // computed for the development split and for the held-out split.
+        foreach (var split in new[] { EvalDataset.DevSplit, EvalDataset.TestSplit })
+        {
+            Assert.Contains(questions, question => question.Split == split && question.Answerable);
+            Assert.Contains(questions, question => question.Split == split && !question.Answerable);
+        }
+
+        Assert.All(questions, question =>
+        {
+            // Labeled locations or the explicit flag, never neither and never both.
+            Assert.Equal(question.Answerable, question.Expected.Count > 0);
+            Assert.All(question.Expected, range =>
+            {
+                var file = Path.Combine(fixture, range.Path.Replace('/', Path.DirectorySeparatorChar));
+                Assert.True(File.Exists(file), $"{question.Id}: '{range.Path}' is not a file of the fixture.");
+                Assert.True(ExistsWithExactCase(fixture, range.Path), $"{question.Id}: '{range.Path}' is not spelled as in the fixture.");
+
+                var lines = FixtureLines(file);
+                Assert.True(
+                    range.EndLine <= lines.Length,
+                    $"{question.Id}: {range.Path} has {lines.Length} lines; the label ends at line {range.EndLine}.");
+                Assert.True(
+                    lines[(range.StartLine - 1)..range.EndLine].Any(line => !string.IsNullOrWhiteSpace(line)),
+                    $"{question.Id}: lines {range.StartLine}-{range.EndLine} of {range.Path} are blank.");
+            });
+        });
+    }
+
+    [Fact]
+    public void A_label_outside_the_fixture_would_be_caught()
+    {
+        var fixture = Path.Combine(RepositoryRoot(), "tests", "fixtures", "sample-repo");
+
+        Assert.False(ExistsWithExactCase(fixture, "readme.md"));
+        Assert.False(ExistsWithExactCase(fixture, "src/TaskBoard.Api/Missing.cs"));
+        Assert.True(ExistsWithExactCase(fixture, "src/TaskBoard.Api/Tasks/TaskItem.cs"));
+        Assert.Equal(5, FixtureLines(Path.Combine(fixture, "src", "TaskBoard.Api", "Tasks", "TaskItem.cs")).Length);
     }
 
     [Fact]
@@ -132,6 +189,31 @@ public class EvalDatasetTests
         string header = "",
         string questions = """{ "id": "a", "split": "dev", "question": "q", "expected": [{ "path": "a", "startLine": 1, "endLine": 1 }] }""") =>
         $$"""{ {{header}} "datasetVersion": "1", "questions": [{{questions}}] }""";
+
+    /// <summary>A file's lines as the indexer counts them: any line ending, no trailing empty line.</summary>
+    private static string[] FixtureLines(string file)
+    {
+        var lines = File.ReadAllText(file).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        return lines[^1].Length == 0 ? lines[..^1] : lines;
+    }
+
+    /// <summary>Paths are compared exactly when recall is computed, so a label must match the file's real spelling.</summary>
+    private static bool ExistsWithExactCase(string root, string relativePath)
+    {
+        var current = root;
+        foreach (var segment in relativePath.Split('/'))
+        {
+            if (!Directory.Exists(current)
+                || !Directory.EnumerateFileSystemEntries(current).Select(Path.GetFileName).Contains(segment, StringComparer.Ordinal))
+            {
+                return false;
+            }
+
+            current = Path.Combine(current, segment);
+        }
+
+        return true;
+    }
 
     private static string RepositoryRoot()
     {

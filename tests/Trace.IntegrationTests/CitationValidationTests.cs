@@ -56,7 +56,8 @@ public class CitationValidationTests(IndexedSampleRepo indexed) : IClassFixture<
     [InlineData("README.md\0.cs", 1, 1, CitationProblem.PathNotInSnapshot)]
     [InlineData("", 1, 1, CitationProblem.PathNotInSnapshot)]
     [InlineData(Readme, 20, 60, CitationProblem.RangeBeyondEndOfFile)]
-    [InlineData(Readme, 29, 29, CitationProblem.RangeBeyondEndOfFile)]
+    // The first line after the fixture README's last one (30 lines since step M1.3 added two).
+    [InlineData(Readme, 31, 31, CitationProblem.RangeBeyondEndOfFile)]
     [InlineData(Readme, 0, 3, CitationProblem.InvalidRange)]
     [InlineData(Readme, -5, -1, CitationProblem.InvalidRange)]
     [InlineData(Readme, 5, 4, CitationProblem.InvalidRange)]
@@ -77,7 +78,7 @@ public class CitationValidationTests(IndexedSampleRepo indexed) : IClassFixture<
         var checks = await indexed.ValidateAsync(
             new Citation(Readme, 1, 3),
             new Citation("src/Invented.cs", 1, 3),
-            new Citation(Readme, 28, 28));
+            new Citation(Readme, 30, 30));   // the README's last line
 
         Assert.Equal([true, false, true], checks.Select(check => check.IsValid));
     }

@@ -71,8 +71,14 @@
         "Tests cover each metric on hand-built result files, including empty and all-failed runs",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T20:17:43.316Z"
+      "status": "done",
+      "startedAt": "2026-11-23T20:17:43.316Z",
+      "finishedAt": "2026-11-23T20:38:48.634Z",
+      "evidence": "Commit a2b1ca4 \"feat(evals): question metrics and run-to-run comparison\" pushed to main; CI run 45260978135 concluded success (backend, web, e2e, deployment-artifacts). Supervisor verification: `git log -1 --oneline` shows a2b1ca4; `git status --short` empty, main in sync with origin/main; `gh run list --limit 1` shows headSha a2b1ca45 completed/success; `dotnet build` re-run: 0 warnings, 0 errors; `dotnet test tests/Trace.UnitTests --no-build` re-run: 252 passed, 0 failed; no trace_eval_* database and no eval/results left behind. Subagent evidence: (1) `dotnet run --no-build --project tools/Trace.Evals -- report <result file>` on a fresh fake-provider run of the 11 fixture questions printed, for All/dev/test: recall at 10 90.9% (10 of 11) / 100% / 83.3%; citation validity 100% (33 of 33); abstention precision and recall n/a (no unanswerable fixture questions yet); cost total, median and 95th percentile $0.0000; time median 32 ms and 95th percentile 309 ms; wrote .report.md and .report.json. (2) `... -- compare <baseline> <candidate>` on a hand-altered copy printed \"2 regressed, 1 improved, 0 changed otherwise, 8 unchanged\" with the regressed rows first; comparing a real run with itself gives 11 unchanged. (3) docs/evaluation.md sections Retrieval measurement, Metrics, Report, Compare two runs define a relevant location (an entry of `expected`, found when a hit in the same file shares a line) and a correct abstention (insufficient_evidence on a question labeled answerable false); ADR-010 records the decisions. (4) EvalMetricsTests, EvalComparisonTests, EvalResultTests cover each metric on hand-built files including empty and all-failed runs; EvalRunnerTests covers recorded retrieval. (5) Tests: unit 252, security 21, integration 223, 0 failed; dotnet format --verify-no-changes exit 0. Result format is now schemaVersion 2 (per-question retrieval: locations only, no source text); version 1 files still read. Fake providers only; nothing spent.",
+      "deferred": "Nothing from this step is stubbed. Not verified: no run against Claude or Voyage, so there is no baseline; compare has only been used on fake-model runs and hand-built or hand-altered files; abstention precision and recall are exercised only on hand-built files because the fixture has no unanswerable questions until M1.3; the retrieval timeout and unexpected-failure paths (timed_out, retrieval_failed) have no test. Design choices recorded in ADR-010 for the owner to review: recall at 10 is measured with one extra search asking the question itself rather than the model's own searches; cost and time never count as a regression; compare exits 0 on regressions (a gate is left to M1.4).",
+      "ownerActions": [
+        "Read docs/adr/ADR-010-evaluation-metrics.md and say if you disagree with measuring recall at 10 from one search that asks the question itself (not from the model's own searches), or with cost and time never counting as a regression."
+      ]
     },
     {
       "id": "M1.3",
@@ -87,7 +93,8 @@
         "The existing retrieval floor tests still pass or are updated with the new counts and the reason",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T20:38:53.571Z"
     },
     {
       "id": "M1.4",

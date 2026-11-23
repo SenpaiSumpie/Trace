@@ -14,3 +14,9 @@ The final step (M6.4) turns this into the owner checklist.
 - [ ] Decide whether to raise Chat:DailyTokenBudget (default 3,000,000 tokens per 24 hours) before a large real-model evaluation run; reaching it ends the run with budget_exhausted.
 - [ ] When evaluating a private repository, pass --output eval/local/... so result files (which quote source text) stay out of the public repository.
 - [ ] If an evaluation run is ever killed outright, drop the leftover trace_eval_* database using the commands in docs/evaluation.md.
+
+### M1.2 Metrics and run-to-run comparison
+
+**Deferred:** Nothing from this step is stubbed. Not verified: no run against Claude or Voyage, so there is no baseline; compare has only been used on fake-model runs and hand-built or hand-altered files; abstention precision and recall are exercised only on hand-built files because the fixture has no unanswerable questions until M1.3; the retrieval timeout and unexpected-failure paths (timed_out, retrieval_failed) have no test. Design choices recorded in ADR-010 for the owner to review: recall at 10 is measured with one extra search asking the question itself rather than the model's own searches; cost and time never count as a regression; compare exits 0 on regressions (a gate is left to M1.4).
+
+- [ ] Read docs/adr/ADR-010-evaluation-metrics.md and say if you disagree with measuring recall at 10 from one search that asks the question itself (not from the model's own searches), or with cost and time never counting as a regression.

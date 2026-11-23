@@ -61,9 +61,9 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         Assert.Matches("^[0-9a-f]{40}$", run.GetProperty("traceCommit").GetString());
         Assert.Contains(run.GetProperty("traceCommitDirty").ValueKind, new[] { JsonValueKind.True, JsonValueKind.False });
         Assert.Equal("sample-repo", run.GetProperty("dataset").GetProperty("name").GetString());
-        Assert.Equal("1", run.GetProperty("dataset").GetProperty("version").GetString());
+        Assert.Equal("2", run.GetProperty("dataset").GetProperty("version").GetString());
         Assert.Equal("all", run.GetProperty("dataset").GetProperty("split").GetString());
-        Assert.Equal(11, run.GetProperty("dataset").GetProperty("questionCount").GetInt32());
+        Assert.Equal(34, run.GetProperty("dataset").GetProperty("questionCount").GetInt32());
         Assert.True(run.GetProperty("dataset").GetProperty("revisionMatchesSnapshot").GetBoolean());
         Assert.Equal(
             run.GetProperty("dataset").GetProperty("revision").GetString(),
@@ -90,7 +90,11 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
             Assert.Equal(JsonValueKind.Null, question.GetProperty("errorCode").ValueKind);
             Assert.NotEqual(Guid.Empty, question.GetProperty("investigationId").GetGuid());
             Assert.False(string.IsNullOrWhiteSpace(question.GetProperty("answer").GetString()));
-            Assert.NotEmpty(question.GetProperty("expected").EnumerateArray());
+
+            // An unanswerable question carries its flag and no labeled location.
+            Assert.Equal(
+                question.GetProperty("answerable").GetBoolean(),
+                question.GetProperty("expected").EnumerateArray().Any());
 
             var toolCall = Assert.Single(question.GetProperty("toolCalls").EnumerateArray());
             Assert.Equal("search_code", toolCall.GetProperty("tool").GetString());
@@ -135,25 +139,36 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
             });
         });
         Assert.Contains(questions, question => question.GetProperty("outcome").GetString() == "answered");
-        Assert.Equal(11, run.GetProperty("totals").GetProperty("questions").GetInt32());
+        Assert.Equal(7, questions.Count(question => !question.GetProperty("answerable").GetBoolean()));
+        Assert.Equal(34, run.GetProperty("totals").GetProperty("questions").GetInt32());
         Assert.Equal(
-            11,
+            34,
             run.GetProperty("totals").GetProperty("answered").GetInt32()
                 + run.GetProperty("totals").GetProperty("insufficientEvidence").GetInt32());
 
         // The metrics come from that file alone. Recall at 10 with the fake embeddings is the
-        // baseline the retrieval tests already hold as a floor: 10 of the 11 labeled locations.
+        // measured baseline for dataset version 2 (step M1.3: 34 questions, 27 of them
+        // answerable with 31 labeled locations): 30 of 31 found, all 15 of the development
+        // split's. It was 10 of 11 for version 1; the fixture and the question set grew, no
+        // search setting changed.
         var reportOutput = new StringWriter();
         Assert.Equal(EvalCommand.ExitOk, await EvalCommand.RunAsync(["report", file], reportOutput, error));
         Assert.Equal(string.Empty, error.ToString());
         var report = EvalMetrics.Report(EvalRunResult.Load(file));
         var all = report.Metrics[0];
-        Assert.Equal((11, 11, 0), (all.RecallAt10.Labeled, all.RecallAt10.QuestionsMeasured, all.RecallAt10.QuestionsNotMeasured));
-        Assert.InRange(all.RecallAt10.Found, 10, 11);
-        Assert.Equal((5, 6), (report.Metrics[1].Questions, report.Metrics[2].Questions));
+        Assert.Equal((31, 27, 0), (all.RecallAt10.Labeled, all.RecallAt10.QuestionsMeasured, all.RecallAt10.QuestionsNotMeasured));
+        Assert.InRange(all.RecallAt10.Found, 30, 31);
+        Assert.Equal((15, 19), (report.Metrics[1].Questions, report.Metrics[2].Questions));
         Assert.Equal(all.RecallAt10.Found, report.Metrics[1].RecallAt10.Found + report.Metrics[2].RecallAt10.Found);
-        Assert.Equal(5, report.Metrics[1].RecallAt10.Found);
-        Assert.Equal(11, all.Duration.Questions);
+        Assert.Equal((15, 15), (report.Metrics[1].RecallAt10.Found, report.Metrics[1].RecallAt10.Labeled));
+        Assert.Equal(34, all.Duration.Questions);
+
+        // The seven unanswerable questions are owed an abstention, in both splits. Whether they
+        // get one is the model's doing (the fake chat model abstains only when its search finds
+        // nothing), so the count owed is asserted here and the result is not.
+        Assert.Equal(
+            (7, 3, 4),
+            (all.Abstention.Unanswerable, report.Metrics[1].Abstention.Unanswerable, report.Metrics[2].Abstention.Unanswerable));
         Assert.Equal(0m, all.Cost.TotalUsd);
         Assert.Contains("| Retrieval recall at 10 | ", reportOutput.ToString(), StringComparison.Ordinal);
         Assert.Contains("chat model is the deterministic fake", reportOutput.ToString(), StringComparison.Ordinal);
@@ -162,7 +177,7 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         // A run compared with itself has no differences.
         var compareOutput = new StringWriter();
         Assert.Equal(EvalCommand.ExitOk, await EvalCommand.RunAsync(["compare", file, file], compareOutput, error));
-        Assert.Contains("0 regressed, 0 improved, 0 changed otherwise, 11 unchanged", compareOutput.ToString(), StringComparison.Ordinal);
+        Assert.Contains("0 regressed, 0 improved, 0 changed otherwise, 34 unchanged", compareOutput.ToString(), StringComparison.Ordinal);
         Assert.Equal(5, Directory.GetFiles(outputDirectory.Path).Length);
 
         // Progress output names questions by id only, never by their text or answer.
@@ -193,7 +208,7 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
 
         Assert.True(exitCode == EvalCommand.ExitOk, $"Exit code {exitCode}. Errors: {error}");
         var result = EvalRunResult.FromJson(await File.ReadAllTextAsync(Assert.Single(Directory.GetFiles(outputDirectory.Path))));
-        Assert.Equal(("dev", 5), (result.Dataset.Split, result.Dataset.QuestionCount));
+        Assert.Equal(("dev", 15), (result.Dataset.Split, result.Dataset.QuestionCount));
         Assert.All(result.Questions, question => Assert.Equal("dev", question.Split));
 
         // The investigations the file describes are the rows the production pipeline stored.
@@ -201,7 +216,7 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         var kept = new NpgsqlConnectionStringBuilder(configured.ConnectionString) { Database = databaseName }.ConnectionString;
         try
         {
-            Assert.Equal(5L, await ScalarAsync(kept, "SELECT count(*) FROM investigations WHERE state = 'completed'"));
+            Assert.Equal(15L, await ScalarAsync(kept, "SELECT count(*) FROM investigations WHERE state = 'completed'"));
             Assert.Equal(
                 (long)result.Questions.Sum(question => question.Evidence.Count),
                 await ScalarAsync(kept, "SELECT count(*) FROM evidence_refs"));

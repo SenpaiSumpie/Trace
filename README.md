@@ -64,12 +64,14 @@ line range. The full specification is in
   (retrieval recall at 10, citation validity, abstention precision and recall, cost and time),
   and a `compare` command lists what changed between two runs question by question,
   regressions first ([ADR-010](docs/adr/ADR-010-evaluation-metrics.md)).
+  The fixture has 34 labeled questions (15 development, 19 held-out), 7 of which the
+  repository cannot answer ([ADR-011](docs/adr/ADR-011-fixture-question-set.md)).
   **Only ever run with the fake models on the fixture: there is no real-model baseline.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
 Not implemented: issue-to-plan, an evaluation baseline from the real models, a telemetry backend with
-dashboards or alerts, a deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
+dashboards or alerts, a deployment pipeline. Retrieval has only been measured with the fake embeddings on the 27-passage fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).
 The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
@@ -165,8 +167,9 @@ changed, regressions first. Both also write Markdown and JSON next to the result
 
 The dataset format, the result file, the definition of every metric and every option are in
 [docs/evaluation.md](docs/evaluation.md). With the fake models the numbers show that the
-plumbing works, not that answers or retrieval are good: on the fixture, recall at 10 is 10 of
-11 labeled locations with the bag-of-words fake embeddings.
+plumbing works, not that answers or retrieval are good: on the fixture's 34 questions, recall
+at 10 is 30 of 31 labeled locations with the bag-of-words fake embeddings, and the fake chat
+model answers all 7 questions that cannot be answered, because it does not read.
 
 ## Telemetry
 
