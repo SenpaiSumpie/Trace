@@ -67,6 +67,8 @@ where results go. How to use it is in [docs/evaluation.md](../evaluation.md).
 - Only local directories can be evaluated. Their revision is a content-derived ID, not a Git
   commit.
 - Result files have no retrieved locations yet, only result counts per tool call. Recall at 10
-  (step M1.2) needs more than that.
+  (step M1.2) needs more than that. (Since decided in
+  [ADR-010](ADR-010-evaluation-metrics.md): the runner records a retrieval of its own per
+  question.)
 - Anyone running the tool with real provider keys sends the source to those providers, exactly
   as the product does.

@@ -28,7 +28,7 @@ public sealed record EvalOptions(
     bool KeepDatabase);
 
 /// <summary>
-/// The <c>run</c> command: index a source directory into a throwaway database, run a dataset's
+/// The tool's entry point and its <c>run</c> command: index a source directory into a throwaway database, run a dataset's
 /// questions against that snapshot through the production pipeline, and write one result file.
 /// </summary>
 public static partial class EvalCommand
@@ -57,9 +57,11 @@ public static partial class EvalCommand
     public const string Usage = """
         Usage:
           dotnet run --project tools/Trace.Evals -- run --dataset <file> --source <directory> [options]
+          dotnet run --project tools/Trace.Evals -- report <result file> [--output <directory>]
+          dotnet run --project tools/Trace.Evals -- compare <baseline result file> <candidate result file> [--output <directory>]
 
-        Runs every question of a dataset against a snapshot of the source directory and writes
-        one result file.
+        run: asks every question of a dataset against a snapshot of the source directory and
+        writes one result file.
 
           --dataset <file>            Labeled questions (see docs/evaluation.md).
           --source <directory>        The repository to index, as a local directory.
@@ -70,6 +72,14 @@ public static partial class EvalCommand
 
         Providers, the database server, prices and the per-question timeout come from
         tools/Trace.Evals/evalsettings.json and environment variables.
+
+        report: prints the metrics of one result file, overall and per split.
+        compare: prints what changed between two result files, question by question, regressions first.
+
+          --output <directory>        Where the Markdown and JSON files go. Default: next to the
+                                      (candidate) result file.
+
+        Neither needs the database or a provider.
         """;
 
     public static EvalOptions ParseArguments(IReadOnlyList<string> args)
@@ -77,7 +87,7 @@ public static partial class EvalCommand
         ArgumentNullException.ThrowIfNull(args);
         if (args.Count == 0 || args[0] != "run")
         {
-            throw new EvalUsageException("The only command is 'run'.");
+            throw new EvalUsageException("Expected a command: 'run', 'report' or 'compare'.");
         }
 
         string? dataset = null;
@@ -145,6 +155,11 @@ public static partial class EvalCommand
     {
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(error);
+
+        if (EvalReportCommand.Handles(args))
+        {
+            return await EvalReportCommand.RunAsync(args, output, error, cancellationToken);
+        }
 
         EvalOptions options;
         EvalDataset dataset;

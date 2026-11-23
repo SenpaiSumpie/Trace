@@ -21,7 +21,12 @@ public static class EvalOutcomes
 
     /// <summary>The run was cancelled before this question was started.</summary>
     public const string NotRun = "not_run";
+
+    public static readonly IReadOnlyList<string> All = [Answered, InsufficientEvidence, Failed, Cancelled, NotRun];
 }
+
+/// <summary>A result file cannot be read or scored; the message says why.</summary>
+public sealed class EvalResultFileException(string message) : Exception(message);
 
 public static class EvalRunStatus
 {
@@ -53,7 +58,11 @@ public sealed record EvalRunResult(
     EvalTotals Totals,
     IReadOnlyList<EvalQuestionResult> Questions)
 {
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>2 added each question's <c>retrieval</c> (the locations recall at 10 is computed from).</summary>
+    public const int CurrentSchemaVersion = 2;
+
+    /// <summary>The oldest format <see cref="Load"/> still reads. A version 1 file has no <c>retrieval</c>.</summary>
+    public const int OldestReadableSchemaVersion = 1;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
@@ -69,6 +78,112 @@ public sealed record EvalRunResult(
     public static EvalRunResult FromJson(string json) =>
         JsonSerializer.Deserialize<EvalRunResult>(json, Json)
         ?? throw new JsonException("The result file is empty.");
+
+    /// <summary>
+    /// Reads a result file for scoring. Refuses a file of an unknown format version or one that
+    /// lacks what every metric relies on, rather than scoring it as if it were complete.
+    /// </summary>
+    /// <exception cref="EvalResultFileException">The file cannot be read or is not a usable result file.</exception>
+    public static EvalRunResult Load(string path)
+    {
+        string json;
+        try
+        {
+            json = File.ReadAllText(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            throw new EvalResultFileException($"Could not read the result file '{path}': {exception.Message}");
+        }
+
+        try
+        {
+            return Parse(json);
+        }
+        catch (EvalResultFileException exception)
+        {
+            throw new EvalResultFileException($"'{path}' is not a usable result file: {exception.Message}");
+        }
+    }
+
+    /// <summary>As <see cref="Load"/>, from the file's text.</summary>
+    public static EvalRunResult Parse(string json)
+    {
+        EvalRunResult? result;
+        try
+        {
+            result = JsonSerializer.Deserialize<EvalRunResult>(json, Json);
+        }
+        catch (JsonException exception)
+        {
+            throw new EvalResultFileException($"it is not JSON of the documented shape ({exception.Message})");
+        }
+
+        if (result is null)
+        {
+            throw new EvalResultFileException("it is empty.");
+        }
+
+        if (result.SchemaVersion is < OldestReadableSchemaVersion or > CurrentSchemaVersion)
+        {
+            throw new EvalResultFileException(
+                $"its schemaVersion is {result.SchemaVersion}; this tool reads versions {OldestReadableSchemaVersion} to {CurrentSchemaVersion}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.RunId) || result.Dataset is null || result.Snapshot is null || result.Chat is null)
+        {
+            throw new EvalResultFileException("\"runId\", \"dataset\", \"snapshot\" and \"chat\" are required.");
+        }
+
+        if (result.Questions is null)
+        {
+            throw new EvalResultFileException("\"questions\" is required.");
+        }
+
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var questions = new List<EvalQuestionResult>(result.Questions.Count);
+        foreach (var question in result.Questions)
+        {
+            if (question is null || string.IsNullOrWhiteSpace(question.Id))
+            {
+                throw new EvalResultFileException("every question needs an \"id\".");
+            }
+
+            if (!ids.Add(question.Id))
+            {
+                throw new EvalResultFileException($"question id '{question.Id}' appears more than once.");
+            }
+
+            if (question.Split is not (EvalDataset.DevSplit or EvalDataset.TestSplit))
+            {
+                throw new EvalResultFileException(
+                    $"question '{question.Id}' must have \"split\" \"{EvalDataset.DevSplit}\" or \"{EvalDataset.TestSplit}\".");
+            }
+
+            if (!EvalOutcomes.All.Contains(question.Outcome))
+            {
+                throw new EvalResultFileException($"question '{question.Id}' has an unknown \"outcome\".");
+            }
+
+            if (question.Tokens is null)
+            {
+                throw new EvalResultFileException($"question '{question.Id}' has no \"tokens\".");
+            }
+
+            // A list left out of a hand-written file reads as null; score it as empty.
+            questions.Add(question with
+            {
+                Expected = question.Expected ?? [],
+                Evidence = question.Evidence ?? [],
+                Unknowns = question.Unknowns ?? [],
+                Limitations = question.Limitations ?? [],
+                ToolCalls = question.ToolCalls ?? [],
+                Retrieval = question.Retrieval is { } retrieval ? retrieval with { Hits = retrieval.Hits ?? [] } : null,
+            });
+        }
+
+        return result with { Questions = questions };
+    }
 
     /// <summary>Sortable and unique: dataset, UTC start time, then the start of the run ID.</summary>
     public string FileName() =>
@@ -149,6 +264,32 @@ public sealed record EvalToolCall(
     public const string Rejected = "rejected";
 }
 
+/// <summary>One passage the search returned for a question: where it is, never its text.</summary>
+/// <param name="Rank">1 is the best hit.</param>
+/// <param name="LexicalRank">Its rank in the full-text search alone; null if that search did not return it.</param>
+/// <param name="VectorRank">Its rank in the embedding search alone; null if that search did not return it.</param>
+public sealed record EvalRetrievedLocation(int Rank, string Path, int StartLine, int EndLine, int? LexicalRank, int? VectorRank);
+
+/// <summary>
+/// What the production search returned when asked the question itself, word for word. Recall
+/// at 10 is computed from this; it is measured apart from the investigation and never shown
+/// to the model.
+/// </summary>
+/// <param name="Limit">How many hits were asked for.</param>
+/// <param name="Hits">In rank order. Empty when the search failed.</param>
+/// <param name="ErrorCode">Why the search could not be made; null when it was.</param>
+public sealed record EvalRetrieval(int Limit, IReadOnlyList<EvalRetrievedLocation> Hits, string? ErrorCode)
+{
+    /// <summary>The search stopped with an error the tool does not name (for example the embedding provider was unreachable).</summary>
+    public const string FailedError = "retrieval_failed";
+
+    public const string TimedOutError = "timed_out";
+}
+
+/// <param name="Retrieval">
+/// Null when retrieval was not measured: the pipeline never accepted the question, the run was
+/// stopped, or the file predates schema version 2.
+/// </param>
 /// <param name="Outcome">One of <see cref="EvalOutcomes"/>.</param>
 /// <param name="ErrorCode">The pipeline's reason for a failure; null otherwise.</param>
 /// <param name="InvestigationId">The investigation in the run's database; null if none was created.</param>
@@ -161,6 +302,7 @@ public sealed record EvalQuestionResult(
     string Question,
     bool Answerable,
     IReadOnlyList<EvalRange> Expected,
+    EvalRetrieval? Retrieval,
     string Outcome,
     string? ErrorCode,
     Guid? InvestigationId,

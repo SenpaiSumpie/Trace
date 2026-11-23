@@ -55,10 +55,15 @@ Done when:
 - [ ] A second labeled set of at least 15 questions exists for one real repository of yours
 - [ ] A baseline is recorded for each handoff metric that applies to questions: retrieval
       recall at 10, citation validity, correct "not enough evidence" results, cost and time
+      (the metrics are defined and computed by `report`, see
+      [evaluation.md](evaluation.md#metrics); no real-model run exists, so there is no
+      baseline yet)
 - [ ] Citation validity is at least 95% and recall at 10 is at least 85% on the held-out
       set, or the shortfall is written down with its cause
 - [ ] A small smoke subset runs in CI with the fake models
-- [ ] Results from two runs can be compared question by question
+- [x] Results from two runs can be compared question by question
+      (`compare`, see [evaluation.md](evaluation.md#compare-two-runs); only ever used on
+      fake-model runs)
 
 ## M2: Issue to plan — size L
 

@@ -72,7 +72,7 @@ public class EvalResultTests
         using var document = JsonDocument.Parse(SampleResult().ToJson());
         var run = document.RootElement;
 
-        Assert.Equal(1, run.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, run.GetProperty("schemaVersion").GetInt32());
         AssertProperties(
             run,
             "schemaVersion", "runId", "status", "traceCommit", "traceCommitDirty", "dataset", "snapshot", "chat", "prices",
@@ -90,9 +90,14 @@ public class EvalResultTests
         var question = run.GetProperty("questions")[0];
         AssertProperties(
             question,
-            "id", "split", "question", "answerable", "expected", "outcome", "errorCode", "investigationId", "answer", "evidence",
-            "unknowns", "limitations", "toolCalls", "rejectedCitations", "tokens", "estimatedCostUsd", "durationMs");
+            "id", "split", "question", "answerable", "expected", "retrieval", "outcome", "errorCode", "investigationId", "answer",
+            "evidence", "unknowns", "limitations", "toolCalls", "rejectedCitations", "tokens", "estimatedCostUsd", "durationMs");
         AssertProperties(question.GetProperty("expected")[0], "path", "startLine", "endLine");
+
+        // Version 2: where the search's hits for the question are. Locations only, no source text.
+        AssertProperties(question.GetProperty("retrieval"), "limit", "hits", "errorCode");
+        AssertProperties(
+            question.GetProperty("retrieval").GetProperty("hits")[0], "rank", "path", "startLine", "endLine", "lexicalRank", "vectorRank");
         AssertProperties(question.GetProperty("evidence")[0], "path", "startLine", "endLine", "supports", "excerpt");
         AssertProperties(
             question.GetProperty("toolCalls")[0],
@@ -117,7 +122,95 @@ public class EvalResultTests
         var read = EvalRunResult.FromJson(json);
         Assert.Equal(result.Questions[0].Evidence, read.Questions[0].Evidence);
         Assert.Equal(result.Questions[0].ToolCalls, read.Questions[0].ToolCalls);
+        Assert.Equal(result.Questions[0].Retrieval!.Hits, read.Questions[0].Retrieval!.Hits);
         Assert.Equal(result with { Questions = [] }, read with { Questions = [] });
+
+        // Reading a file for scoring accepts what the runner writes.
+        Assert.Equal(result.Questions[0].Evidence, EvalRunResult.Parse(json).Questions[0].Evidence);
+    }
+
+    [Fact]
+    public void A_version_1_file_is_still_read_and_has_no_retrieval()
+    {
+        // Exactly what the previous format wrote: no "retrieval" property at all.
+        var json = SampleResult().ToJson()
+            .Replace("\"schemaVersion\": 2", "\"schemaVersion\": 1", StringComparison.Ordinal);
+        var withoutRetrieval = System.Text.Json.Nodes.JsonNode.Parse(json)!;
+        withoutRetrieval["questions"]![0]!.AsObject().Remove("retrieval");
+
+        var read = EvalRunResult.Parse(withoutRetrieval.ToJsonString());
+
+        Assert.Equal(1, read.SchemaVersion);
+        Assert.Null(Assert.Single(read.Questions).Retrieval);
+    }
+
+    [Theory]
+    [InlineData("", "not JSON")]
+    [InlineData("null", "empty")]
+    [InlineData("[]", "not JSON")]
+    [InlineData("""{ "schemaVersion": 3, "runId": "r", "questions": [] }""", "schemaVersion is 3")]
+    [InlineData("""{ "schemaVersion": 0, "runId": "r", "questions": [] }""", "schemaVersion is 0")]
+    [InlineData("""{ "schemaVersion": 2, "questions": [] }""", "are required")]
+    public void A_file_that_is_not_a_result_file_is_refused_with_the_reason(string json, string expectedMessage)
+    {
+        var exception = Assert.Throws<EvalResultFileException>(() => EvalRunResult.Parse(json));
+
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("\"split\": \"dev\"", "\"split\": \"train\"", "\"split\"")]
+    [InlineData("\"outcome\": \"answered\"", "\"outcome\": \"great\"", "unknown \"outcome\"")]
+    [InlineData("\"id\": \"pagination-offset\"", "\"id\": \"\"", "needs an \"id\"")]
+    public void A_question_a_metric_cannot_place_is_refused_rather_than_scored(string find, string replace, string expectedMessage)
+    {
+        var json = SampleResult().ToJson();
+        Assert.Contains(find, json, StringComparison.Ordinal);
+
+        var exception = Assert.Throws<EvalResultFileException>(
+            () => EvalRunResult.Parse(json.Replace(find, replace, StringComparison.Ordinal)));
+
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Two_questions_with_one_id_or_a_missing_file_are_refused()
+    {
+        var sample = SampleResult();
+        var twice = sample with { Questions = [sample.Questions[0], sample.Questions[0]] };
+        Assert.Contains(
+            "more than once",
+            Assert.Throws<EvalResultFileException>(() => EvalRunResult.Parse(twice.ToJson())).Message,
+            StringComparison.Ordinal);
+
+        var missing = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.json");
+        Assert.Contains(
+            "Could not read",
+            Assert.Throws<EvalResultFileException>(() => EvalRunResult.Load(missing)).Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Lists_left_out_of_a_hand_written_file_are_read_as_empty()
+    {
+        var read = EvalRunResult.Parse("""
+            {
+              "schemaVersion": 2, "runId": "r1", "status": "completed", "traceCommit": "unknown",
+              "dataset": { "name": "d", "version": "1", "split": "all", "questionCount": 1 },
+              "snapshot": { "commitSha": "c", "branch": "main", "chunkerVersion": "v", "embeddingProvider": "p", "embeddingModel": "m" },
+              "chat": { "provider": "p", "model": "m", "promptVersion": "v" },
+              "questions": [
+                { "id": "q1", "split": "test", "answerable": false, "outcome": "not_run",
+                  "tokens": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }, "retrieval": { "limit": 10 } }
+              ]
+            }
+            """);
+
+        var question = Assert.Single(read.Questions);
+        Assert.Empty(question.Expected);
+        Assert.Empty(question.Evidence);
+        Assert.Empty(question.ToolCalls);
+        Assert.Empty(question.Retrieval!.Hits);
     }
 
     [Fact]
@@ -149,6 +242,8 @@ public class EvalResultTests
             EvalCommand.ParseArguments(["run", "--source", "repo", "--dataset", "d.json"]));
 
         Assert.Throws<EvalUsageException>(() => EvalCommand.ParseArguments([]));
+
+        // 'report' and 'compare' have a parser of their own; this one is for 'run' only.
         Assert.Throws<EvalUsageException>(() => EvalCommand.ParseArguments(["report"]));
         Assert.Throws<EvalUsageException>(() => EvalCommand.ParseArguments(["run", "--source", "repo"]));
         Assert.Throws<EvalUsageException>(() => EvalCommand.ParseArguments(["run", "--dataset", "d.json"]));
@@ -166,6 +261,10 @@ public class EvalResultTests
             "Why does the first page skip results?",
             Answerable: true,
             [new EvalRange("src/A.cs", 20, 29)],
+            new EvalRetrieval(
+                Limit: 10,
+                [new EvalRetrievedLocation(1, "src/A.cs", 1, 40, LexicalRank: 1, VectorRank: 2), new EvalRetrievedLocation(2, "docs/b.md", 1, 12, null, 1)],
+                ErrorCode: null),
             EvalOutcomes.Answered,
             ErrorCode: null,
             Guid.Parse("11111111-1111-1111-1111-111111111111"),

@@ -34,6 +34,10 @@ public sealed record EvalRunRequest(
 /// registration, as one final job attempt would run it; this class only reads back what the
 /// pipeline stored. The repository and snapshot are fixed by the run, never by a question.
 /// </para>
+/// <para>
+/// The one thing it does beside the pipeline is a search of its own per question, to measure
+/// retrieval (ADR-010). That search is never part of an investigation.
+/// </para>
 /// </summary>
 public sealed class EvalRunner(
     IServiceScopeFactory scopes,
@@ -45,6 +49,9 @@ public sealed class EvalRunner(
     public const string RequestRejectedError = "request_rejected";
 
     public const string InternalError = "internal_error";
+
+    /// <summary>How many hits the retrieval measurement asks the search for: the 10 of "recall at 10".</summary>
+    public const int RetrievalLimit = 10;
 
     /// <param name="onQuestion">Called after each question that was run, for progress output.</param>
     /// <param name="cancellationToken">Stops the run: the question in progress is cancelled and the rest are recorded as not run.</param>
@@ -187,7 +194,64 @@ public sealed class EvalRunner(
 
         var duration = timeProvider.GetElapsedTime(started);
         var record = await ReadAsync(investigationId);
-        return Describe(question, fallbackOutcome, fallbackError, record, request.Prices, duration);
+
+        // Measured only for a question the pipeline accepted: that is where the repository's
+        // visibility and the snapshot are checked, and the runner makes no such decision itself.
+        var retrieval = investigationId is null
+            ? null
+            : await RetrieveAsync(request, question, runCancellation);
+        return Describe(question, fallbackOutcome, fallbackError, record, request.Prices, duration, retrieval);
+    }
+
+    /// <summary>
+    /// Asks the production search for the question itself, word for word, and records where the
+    /// hits are. This is what recall at 10 is computed from. It happens after the investigation,
+    /// outside its measured time, and its result is never given to the model.
+    /// </summary>
+    private async Task<EvalRetrieval?> RetrieveAsync(
+        EvalRunRequest request,
+        EvalQuestion question,
+        CancellationToken runCancellation)
+    {
+        if (runCancellation.IsCancellationRequested)
+        {
+            return null;
+        }
+
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(runCancellation);
+        stop.CancelAfter(request.QuestionTimeout);
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var found = await scope.ServiceProvider.GetRequiredService<SourceTools>().SearchCodeAsync(
+                request.RepositoryId, request.SnapshotId, question.Question, RetrievalLimit, stop.Token);
+            return new EvalRetrieval(
+                RetrievalLimit,
+                [.. found.Hits.Select((hit, index) =>
+                    new EvalRetrievedLocation(index + 1, hit.Path, hit.StartLine, hit.EndLine, hit.LexicalRank, hit.VectorRank))],
+                ErrorCode: null);
+        }
+        catch (SourceToolException exception)
+        {
+            // For example a question longer than the search accepts as a query.
+            return new EvalRetrieval(RetrievalLimit, [], JsonNamingPolicy.SnakeCaseLower.ConvertName(exception.Error.ToString()));
+        }
+        catch (OperationCanceledException) when (runCancellation.IsCancellationRequested)
+        {
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            return new EvalRetrieval(RetrievalLimit, [], EvalRetrieval.TimedOutError);
+        }
+        catch (Exception exception)
+        {
+            // The message may quote the question, so only the type is logged.
+            logger.LogError(
+                "Retrieval for evaluation question {QuestionId} ended with an unexpected {ExceptionType}.",
+                question.Id, exception.GetType().FullName);
+            return new EvalRetrieval(RetrievalLimit, [], EvalRetrieval.FailedError);
+        }
     }
 
     /// <summary>Gives an unfinished investigation its final state, as the job queue would after a cancelled or failed job.</summary>
@@ -244,7 +308,8 @@ public sealed class EvalRunner(
         string? fallbackError,
         InvestigationRecord? record,
         ModelPrices? prices,
-        TimeSpan duration)
+        TimeSpan duration,
+        EvalRetrieval? retrieval = null)
     {
         var investigation = record?.Investigation;
         var result = investigation is { State: InvestigationState.Completed, ResultJson: { } json }
@@ -274,6 +339,7 @@ public sealed class EvalRunner(
             question.Question,
             question.Answerable,
             question.Expected,
+            retrieval,
             outcome,
             errorCode,
             investigation?.Id,

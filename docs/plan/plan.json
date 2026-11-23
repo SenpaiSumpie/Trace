@@ -47,8 +47,17 @@
         "Result files are written under a git-ignored directory by default",
         "Unit and integration tests cover the runner; all checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T19:57:45.871Z"
+      "status": "done",
+      "startedAt": "2026-11-23T19:57:45.871Z",
+      "finishedAt": "2026-11-23T20:17:38.403Z",
+      "evidence": "Commit c8b3bc7 \"feat(evals): evaluation runner that drives the production pipeline\" pushed to main; CI run 45257305058 concluded success (backend, web, e2e, deployment-artifacts). Supervisor verification: `git log -1 --oneline` shows c8b3bc7; `git status --short` empty and main in sync with origin/main; `gh run list --limit 1` shows headSha c8b3bc71 completed/success; `dotnet format --verify-no-changes` re-run, exit 0. Subagent evidence: (1) `dotnet run --project tools/Trace.Evals -- run --dataset tests/fixtures/sample-repo.questions.json --source tests/fixtures/sample-repo` printed \"11 question(s): 11 answered, 0 insufficient evidence, 0 failed, 0 cancelled, 0 not run\" and wrote eval/results/sample-repo-<timestamp>.json, exit 0; command documented in README \"Evaluation\" and docs/evaluation.md. (2) Result file holds traceCommit, dataset name/version/revision, snapshot commitSha/chunkerVersion/embeddingModel, chat model/promptVersion, startedAt/endedAt, and per question id, outcome, answer, evidence, toolCalls with resultCount, tokens (input, output, cacheRead, cacheWrite), estimatedCostUsd, durationMs; EvalResultTests.Result_file_has_exactly_the_documented_fields asserts the schema. (3) EvalRunner resolves the production QuestionInvestigator from AddTraceInfrastructure and calls CreateAsync/RunAsync; injection test shows unknown tool rejected and unverifiable citations discarded. (4) Test A_failed_and_a_cancelled_question_are_recorded_and_the_run_continues: answered, failed (model_error), cancelled, answered. (5) `git check-ignore -v` on the result file: .gitignore:494:eval/results/. (6) dotnet build 0 warnings; tests: unit 204, security 21, integration 222, 0 failed. Prices come from Eval:Prices in tools/Trace.Evals/evalsettings.json. Each run uses a throwaway trace_eval_<random> database that is dropped afterwards; development database row counts unchanged before and after. ADR-009 and docs/evaluation.md added. Fake providers only; nothing spent.",
+      "deferred": "The runner has never been run against Claude or Voyage (that is M1.5), so the cost arithmetic is checked only against hand-computed numbers in tests. The first M1 milestone box stays unticked for that reason. The result file records each tool call's result count, not the locations returned, so recall at 10 cannot yet be computed from a result file alone (open question 68; belongs to M1.2). Ctrl+C was not tried by hand; cancellation is covered by a test. Only a local source directory can be evaluated, not a repository indexed from GitHub. The runner makes one attempt per question with no retry.",
+      "ownerActions": [
+        "Before the real-model baseline (M1.5), confirm the per-million-token prices for the chat model under Eval:Prices:<model id> in tools/Trace.Evals/evalsettings.json; none is shipped, and without one the estimated cost is null.",
+        "Decide whether to raise Chat:DailyTokenBudget (default 3,000,000 tokens per 24 hours) before a large real-model evaluation run; reaching it ends the run with budget_exhausted.",
+        "When evaluating a private repository, pass --output eval/local/... so result files (which quote source text) stay out of the public repository.",
+        "If an evaluation run is ever killed outright, drop the leftover trace_eval_* database using the commands in docs/evaluation.md."
+      ]
     },
     {
       "id": "M1.2",
@@ -62,7 +71,8 @@
         "Tests cover each metric on hand-built result files, including empty and all-failed runs",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T20:17:43.316Z"
     },
     {
       "id": "M1.3",

@@ -60,11 +60,15 @@ line range. The full specification is in
   through the same investigation pipeline the API uses and writes one result file per run with,
   per question, the outcome, answer, checked evidence, tool calls, tokens, estimated cost and
   time ([docs/evaluation.md](docs/evaluation.md), [ADR-009](docs/adr/ADR-009-evaluation-runner.md)).
-  **Only ever run with the fake models on the fixture; no metrics or comparison of runs yet.**
+  A `report` command computes the question metrics from a result file, overall and per split
+  (retrieval recall at 10, citation validity, abstention precision and recall, cost and time),
+  and a `compare` command lists what changed between two runs question by question,
+  regressions first ([ADR-010](docs/adr/ADR-010-evaluation-metrics.md)).
+  **Only ever run with the fake models on the fixture: there is no real-model baseline.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, evaluation metrics and baselines, a telemetry backend with
+Not implemented: issue-to-plan, an evaluation baseline from the real models, a telemetry backend with
 dashboards or alerts, a deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).
@@ -148,9 +152,21 @@ dotnet run --project tools/Trace.Evals -- run --dataset tests/fixtures/sample-re
 
 It indexes the fixture into a database of its own, which it drops afterwards (your development
 data is not touched), and writes `eval/results/sample-repo-<time>-<run id>.json` (git-ignored).
-The dataset format, the result file and every option are in
-[docs/evaluation.md](docs/evaluation.md). With the fake chat model the outcomes show that the
-plumbing works, not that answers are good.
+Then compute its metrics, or compare two runs:
+
+```sh
+dotnet run --project tools/Trace.Evals -- report eval/results/<result file>.json
+dotnet run --project tools/Trace.Evals -- compare eval/results/<baseline>.json eval/results/<candidate>.json
+```
+
+`report` prints retrieval recall at 10, citation validity, abstention precision and recall,
+cost and time, for all questions and for each split. `compare` lists every question with what
+changed, regressions first. Both also write Markdown and JSON next to the result file.
+
+The dataset format, the result file, the definition of every metric and every option are in
+[docs/evaluation.md](docs/evaluation.md). With the fake models the numbers show that the
+plumbing works, not that answers or retrieval are good: on the fixture, recall at 10 is 10 of
+11 labeled locations with the bag-of-words fake embeddings.
 
 ## Telemetry
 

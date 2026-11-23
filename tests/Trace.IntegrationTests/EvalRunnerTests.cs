@@ -56,7 +56,7 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
 
         // Per run: the TRACE commit, dataset name and version, snapshot commit, chunker and
         // embedding versions, chat model and prompt version, start and end time.
-        Assert.Equal(1, run.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, run.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("completed", run.GetProperty("status").GetString());
         Assert.Matches("^[0-9a-f]{40}$", run.GetProperty("traceCommit").GetString());
         Assert.Contains(run.GetProperty("traceCommitDirty").ValueKind, new[] { JsonValueKind.True, JsonValueKind.False });
@@ -115,6 +115,24 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
 
             Assert.Equal(0m, question.GetProperty("estimatedCostUsd").GetDecimal());
             Assert.True(question.GetProperty("durationMs").GetInt64() >= 0);
+
+            // What recall is computed from: the search's ten best hits for the question, as
+            // locations in files of the fixture, ranked from 1, with no source text.
+            var retrieval = question.GetProperty("retrieval");
+            Assert.Equal(10, retrieval.GetProperty("limit").GetInt32());
+            Assert.Equal(JsonValueKind.Null, retrieval.GetProperty("errorCode").ValueKind);
+            var hits = retrieval.GetProperty("hits").EnumerateArray().ToList();
+            Assert.Equal(10, hits.Count);
+            Assert.Equal(Enumerable.Range(1, 10), hits.Select(hit => hit.GetProperty("rank").GetInt32()));
+            Assert.All(hits, hit =>
+            {
+                Assert.Equal(
+                    ["rank", "path", "startLine", "endLine", "lexicalRank", "vectorRank"],
+                    hit.EnumerateObject().Select(property => property.Name));
+                var lines = SampleRepo.ReadLines(hit.GetProperty("path").GetString()!);
+                Assert.InRange(hit.GetProperty("startLine").GetInt32(), 1, hit.GetProperty("endLine").GetInt32());
+                Assert.InRange(hit.GetProperty("endLine").GetInt32(), 1, lines.Length);
+            });
         });
         Assert.Contains(questions, question => question.GetProperty("outcome").GetString() == "answered");
         Assert.Equal(11, run.GetProperty("totals").GetProperty("questions").GetInt32());
@@ -122,6 +140,30 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
             11,
             run.GetProperty("totals").GetProperty("answered").GetInt32()
                 + run.GetProperty("totals").GetProperty("insufficientEvidence").GetInt32());
+
+        // The metrics come from that file alone. Recall at 10 with the fake embeddings is the
+        // baseline the retrieval tests already hold as a floor: 10 of the 11 labeled locations.
+        var reportOutput = new StringWriter();
+        Assert.Equal(EvalCommand.ExitOk, await EvalCommand.RunAsync(["report", file], reportOutput, error));
+        Assert.Equal(string.Empty, error.ToString());
+        var report = EvalMetrics.Report(EvalRunResult.Load(file));
+        var all = report.Metrics[0];
+        Assert.Equal((11, 11, 0), (all.RecallAt10.Labeled, all.RecallAt10.QuestionsMeasured, all.RecallAt10.QuestionsNotMeasured));
+        Assert.InRange(all.RecallAt10.Found, 10, 11);
+        Assert.Equal((5, 6), (report.Metrics[1].Questions, report.Metrics[2].Questions));
+        Assert.Equal(all.RecallAt10.Found, report.Metrics[1].RecallAt10.Found + report.Metrics[2].RecallAt10.Found);
+        Assert.Equal(5, report.Metrics[1].RecallAt10.Found);
+        Assert.Equal(11, all.Duration.Questions);
+        Assert.Equal(0m, all.Cost.TotalUsd);
+        Assert.Contains("| Retrieval recall at 10 | ", reportOutput.ToString(), StringComparison.Ordinal);
+        Assert.Contains("chat model is the deterministic fake", reportOutput.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("first page of the task list", reportOutput.ToString(), StringComparison.Ordinal);
+
+        // A run compared with itself has no differences.
+        var compareOutput = new StringWriter();
+        Assert.Equal(EvalCommand.ExitOk, await EvalCommand.RunAsync(["compare", file, file], compareOutput, error));
+        Assert.Contains("0 regressed, 0 improved, 0 changed otherwise, 11 unchanged", compareOutput.ToString(), StringComparison.Ordinal);
+        Assert.Equal(5, Directory.GetFiles(outputDirectory.Path).Length);
 
         // Progress output names questions by id only, never by their text or answer.
         Assert.Contains("pagination-offset: ", output.ToString(), StringComparison.Ordinal);
@@ -250,6 +292,23 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         Assert.Empty(failed.Evidence);
         Assert.Equal(0m, failed.EstimatedCostUsd);
 
+        // Retrieval is measured for every question the pipeline accepted, whatever the model
+        // then did: it is the search asked the question itself, not anything the model asked for.
+        Assert.All(result.Questions, question =>
+        {
+            Assert.NotNull(question.Retrieval);
+            Assert.Equal((EvalRunner.RetrievalLimit, null), (question.Retrieval.Limit, question.Retrieval.ErrorCode));
+            Assert.Equal(Enumerable.Range(1, question.Retrieval.Hits.Count), question.Retrieval.Hits.Select(hit => hit.Rank));
+        });
+        await using (var scope = indexed.Database.CreateScope())
+        {
+            var direct = await scope.ServiceProvider.GetRequiredService<Trace.Application.Retrieval.SourceTools>()
+                .SearchCodeAsync(indexed.RepositoryId, indexed.Index.SnapshotId, "model-down", EvalRunner.RetrievalLimit);
+            Assert.Equal(
+                direct.Hits.Select(hit => (hit.Path, hit.StartLine, hit.EndLine, hit.LexicalRank, hit.VectorRank)),
+                failed.Retrieval!.Hits.Select(hit => (hit.Path, hit.StartLine, hit.EndLine, hit.LexicalRank, hit.VectorRank)));
+        }
+
         Assert.Equal(
             new EvalTotals(4, Answered: 2, InsufficientEvidence: 0, Failed: 1, Cancelled: 1, NotRun: 0, new EvalTokens(4_000, 800, 1_200, 400), 0.0702m),
             result.Totals);
@@ -324,6 +383,10 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         Assert.Equal(["good-1", "stop-here"], reported);
         Assert.Equal(["good-1", "stop-here"], model.Questions.Distinct());
         Assert.All(result.Questions.Skip(2), question => Assert.Null(question.InvestigationId));
+
+        // Nothing is retrieved once the run has been stopped.
+        Assert.NotNull(result.Questions[0].Retrieval);
+        Assert.All(result.Questions.Skip(1), question => Assert.Null(question.Retrieval));
         Assert.Equal(new EvalTotals(4, 1, 0, 0, 1, 2, new EvalTokens(2_000, 400, 600, 200), 0.0351m), result.Totals);
 
         await using var db = indexed.Database.CreateContext();
@@ -362,6 +425,51 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
         Assert.Equal([null, 15, null, null], question.ToolCalls.Select(call => call.ResultCount));
         Assert.All(question.ToolCalls.Where(call => call.Status == EvalToolCall.Failed), call => Assert.NotNull(call.ErrorCode));
         Assert.DoesNotContain("pwned", result.ToJson(), StringComparison.Ordinal);
+
+        // The recorded retrieval is the search for the dataset's question. Nothing the model
+        // asked for or claimed is in it: not the file it made up, not the path it tried to escape with.
+        Assert.NotNull(question.Retrieval);
+        Assert.Null(question.Retrieval.ErrorCode);
+        await using var db = indexed.Database.CreateContext();
+        var indexedPaths = await db.SourceChunks.Select(chunk => chunk.Path).Distinct().ToListAsync();
+        Assert.All(question.Retrieval.Hits, hit => Assert.Contains(hit.Path, indexedPaths));
+        Assert.DoesNotContain("docs/zebracorn.md", indexedPaths);
+
+        // Scored from the file: the two discarded citations count against citation validity.
+        var metrics = EvalMetrics.Report(EvalRunResult.Parse(result.ToJson())).Metrics[0];
+        Assert.Equal(new CitationMetric(0, Valid: 0, Cited: 2), metrics.CitationValidity);
+        Assert.Equal(new LabeledEvidenceMetric(0, Cited: 0, Questions: 1), metrics.LabeledEvidenceCited);
+    }
+
+    [Fact]
+    public async Task A_question_too_long_to_search_for_is_still_investigated_and_its_retrieval_is_recorded_as_not_measured()
+    {
+        var model = new QuestionChatModel((_, request, _) => Task.FromResult(GoodTurn(request)));
+        await using var indexed = await IndexAsync(model);
+        var longQuestion = string.Join(' ', Enumerable.Repeat("pagination", 150));
+        Assert.InRange(longQuestion.Length, Trace.Application.Retrieval.SourceTools.MaxQueryLength + 1, EvalDataset.MaxQuestionLength);
+        var dataset = Dataset(indexed, "short") with
+        {
+            Questions =
+            [
+                new EvalQuestion("too-long", EvalDataset.DevSplit, longQuestion, [new EvalRange(TaskRepositoryPath, 20, 29)], Answerable: true),
+                new EvalQuestion("short", EvalDataset.DevSplit, "short", [new EvalRange(TaskRepositoryPath, 20, 29)], Answerable: true),
+            ],
+        };
+
+        var result = await indexed.RunAsync(Request(indexed, dataset));
+
+        Assert.Equal(["answered", "answered"], result.Questions.Select(question => question.Outcome));
+        var tooLong = result.Questions[0].Retrieval;
+        Assert.NotNull(tooLong);
+        Assert.Equal((EvalRunner.RetrievalLimit, "invalid_argument"), (tooLong.Limit, tooLong.ErrorCode));
+        Assert.Empty(tooLong.Hits);
+        Assert.Null(result.Questions[1].Retrieval!.ErrorCode);
+
+        // A retrieval that could not be made is "not measured", never a miss.
+        var recall = EvalMetrics.Report(result).Metrics[0].RecallAt10;
+        Assert.Equal((1, 1), (recall.QuestionsMeasured, recall.QuestionsNotMeasured));
+        Assert.Equal(1, recall.Labeled);
     }
 
     [Fact]
@@ -380,6 +488,9 @@ public partial class EvalRunnerTests(PostgresFixture postgres)
             Assert.Null(question.Answer);
             Assert.Empty(question.Evidence);
             Assert.Empty(question.ToolCalls);
+
+            // The runner does not search a repository the pipeline refused to answer about.
+            Assert.Null(question.Retrieval);
         });
         Assert.Empty(model.Questions);
 
