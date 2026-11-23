@@ -82,7 +82,7 @@ public sealed class IssueReader(IRepositoryCatalog repositories, IIssueSourceRes
 {
     public Task<IssuePage> ListOpenAsync(
         Guid repositoryId, int limit, string? cursor, CancellationToken cancellationToken = default) =>
-        ReadAsync("list", repositoryId, async (source, activity) =>
+        ReadAsync("list", repositoryId, callerMustSee: true, async (source, activity) =>
         {
             if (limit is < 1 or > IssueLimits.MaxPageSize || cursor is { Length: > IssueLimits.MaxCursorLength })
             {
@@ -97,7 +97,19 @@ public sealed class IssueReader(IRepositoryCatalog repositories, IIssueSourceRes
         });
 
     public Task<IssueDetail> GetAsync(Guid repositoryId, int number, CancellationToken cancellationToken = default) =>
-        ReadAsync("get", repositoryId, async (source, activity) =>
+        GetAsync(repositoryId, number, callerMustSee: true, cancellationToken);
+
+    /// <summary>
+    /// Fetches an issue for a background run. A worker has no caller: the run was authorized
+    /// when it was queued (<see cref="Access.ICurrentUser"/>), so the visibility check is not
+    /// repeated here. Everything else is the same: the same source, limits, cleaning and
+    /// telemetry. Never call this for a request.
+    /// </summary>
+    public Task<IssueDetail> GetForRunAsync(Guid repositoryId, int number, CancellationToken cancellationToken = default) =>
+        GetAsync(repositoryId, number, callerMustSee: false, cancellationToken);
+
+    private Task<IssueDetail> GetAsync(Guid repositoryId, int number, bool callerMustSee, CancellationToken cancellationToken) =>
+        ReadAsync("get", repositoryId, callerMustSee, async (source, activity) =>
         {
             activity?.SetTag("trace.issue.number", number);
             var thread = number < 1 ? null : await source.GetAsync(number, IssueLimits.MaxComments, cancellationToken);
@@ -158,7 +170,11 @@ public sealed class IssueReader(IRepositoryCatalog repositories, IIssueSourceRes
     private static string? Author(string? login) =>
         IssueText.CleanLine(login, IssueLimits.MaxAuthorLength) is { Length: > 0 } author ? author : null;
 
-    private async Task<T> ReadAsync<T>(string operation, Guid repositoryId, Func<IIssueSource, Activity?, Task<T>> read)
+    private async Task<T> ReadAsync<T>(
+        string operation,
+        Guid repositoryId,
+        bool callerMustSee,
+        Func<IIssueSource, Activity?, Task<T>> read)
     {
         using var activity = TraceTelemetry.Source.StartActivity($"issues.{operation}");
         activity?.SetTag("trace.repository_id", repositoryId);
@@ -167,7 +183,7 @@ public sealed class IssueReader(IRepositoryCatalog repositories, IIssueSourceRes
         var kind = "none";
         try
         {
-            if (!await repositories.IsVisibleAsync(repositoryId))
+            if (callerMustSee && !await repositories.IsVisibleAsync(repositoryId))
             {
                 throw new IssueReadException(IssueReadError.RepositoryNotFound);
             }

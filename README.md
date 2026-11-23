@@ -41,19 +41,30 @@ line range. The full specification is in
 - Reading GitHub issues, read-only: list a repository's open issues and fetch one with its
   comments, for a repository the caller can see, with size limits whose every cut is flagged
   and pull requests left out. Issue text is fetched on demand and not stored, never reaches a
-  log or a span, and is not yet given to any model. The demo repository serves invented fixture
+  log or a span, and reaches a model only in a plan run, as quoted data. The demo repository serves invented fixture
   issues from files ([ADR-015](docs/adr/ADR-015-reading-github-issues.md)). **Never run against
   real GitHub issues: the GitHub App first needs a read-only Issues permission that only its
   owner can approve** ([how](docs/github-app-setup.md#adding-the-issues-permission-to-an-existing-app)).
-- Storage for implementation plans, with nothing using it yet: a `plans` table tied to one
+- Storage for implementation plans: a `plans` table tied to one
   issue-to-plan investigation, the issue it was made from (number, title and a hash of its
   text; the text itself is not stored), a versioned result document
   ([docs/plan-result-schema.md](docs/plan-result-schema.md)) whose citations are stored
   evidence rows, and a reviewed timestamp. The database refuses a plan for the wrong
   investigation, a citation that is not evidence of the plan's own investigation, and any
   change to a finished plan other than marking it reviewed once
-  ([ADR-016](docs/adr/ADR-016-plan-storage.md)). **No workflow, endpoint or page creates or
-  shows a plan yet.**
+  ([ADR-016](docs/adr/ADR-016-plan-storage.md)).
+- Issue-to-plan investigations, without a way to ask for one yet: a durable job reads the
+  issue, shows it to the model as quoted data, lets the model explore with the same two
+  read-only tools and limits as a question, and stores a plan made only of what the server
+  could verify of the model's proposal. A step, risk, verification entry or changed file is
+  removed unless every citation on it is in the snapshot and was retrieved in the run; a file
+  must exist in the snapshot unless it is marked new; a proposal with no valid citation is
+  stored as insufficient evidence, not as a plan; what was removed is counted and listed in
+  the investigation's events ([ADR-017](docs/adr/ADR-017-issue-to-plan-validation.md)).
+  **Plan generation has only run with the deterministic fake model and scripted test models,
+  on the fixture and invented issues: no real model has been asked for a plan and no real
+  GitHub issue has been read by a run.** The fake's plan is a list of passages matching the
+  issue's title. **No endpoint or page asks for or shows a plan yet.**
 - Deployment artifacts: production images for web, API and worker, a compose file that runs the
   whole stack from them, and an Azure template (Container Apps + PostgreSQL). **Nothing has been
   deployed**; see [docs/deployment.md](docs/deployment.md).
@@ -101,8 +112,8 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan (issues can be read and a plan can be stored, but nothing makes
-a plan from an issue and no page shows either), a telemetry backend with dashboards or alerts, a deployment
+Not implemented: asking for, showing, exporting or reviewing a plan (the workflow that makes a
+plan from an issue exists and is driven by tests only; it has never run with a real model), a telemetry backend with dashboards or alerts, a deployment
 pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).

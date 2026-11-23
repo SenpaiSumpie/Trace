@@ -115,6 +115,10 @@ and in tests) unless the step says to use the real ones. When it does:
   commits: complete the investigation, add its evidence rows and finish the plan in one
   save (ADR-016). Changing the plan document is a new schema version (`docs/plan-result-schema.md`).
 - JSON sent to the model uses the relaxed encoder so code is not turned into `\uXXXX`.
+- Questions and plans share one run, tool loop and citation rule (`InvestigationRunner`).
+  Change it and you change both: the question baseline depends on it. A plan keeps only
+  what the server verified of the model's proposal, and issue text reaches a model only
+  through `PlanPrompt.FirstMessage` (ADR-017).
 - An interpolated raw SQL string containing `'{}'::jsonb` needs the `{"{}"}` form.
 - Labeled evaluation questions are written before looking at retrieval results, and tuning
   is done on the development split only, never the held-out one.

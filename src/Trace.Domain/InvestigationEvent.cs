@@ -13,7 +13,10 @@ public enum InvestigationEventType
     /// <summary>A tool request was refused without running anything (unknown tool, budget exhausted).</summary>
     ToolRejected,
 
-    /// <summary>A citation in the model's answer did not survive validation and was discarded.</summary>
+    /// <summary>
+    /// A citation in the model's answer did not survive validation and was discarded; or, in a
+    /// plan investigation, an entry of the proposed plan was removed because it was not verified.
+    /// </summary>
     CitationRejected,
 
     Completed,

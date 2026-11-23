@@ -88,7 +88,8 @@ internal sealed class EfInvestigationStore(TraceDbContext db, ICurrentUser curre
 
         var dedupeKey = investigationId.ToString();
         var jobId = await db.Jobs
-            .Where(j => j.Kind == InvestigationJobHandler.JobKind && j.DedupeKey == dedupeKey)
+            .Where(j => (j.Kind == InvestigationJobHandler.JobKind || j.Kind == Application.Plans.PlanJobHandler.JobKind)
+                && j.DedupeKey == dedupeKey)
             .Select(j => (Guid?)j.Id)
             .SingleOrDefaultAsync(cancellationToken);
 

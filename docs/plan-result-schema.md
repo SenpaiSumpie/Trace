@@ -5,8 +5,9 @@ page is the contract for that JSON. The code is `PlanResult` in
 `src/Trace.Application/Plans/PlanResult.cs`; why it looks like this is in
 [ADR-016](adr/ADR-016-plan-storage.md).
 
-**Version: `plan-v1`.** Nothing writes a plan yet: the workflow that fills this in is step
-M2.3 and the API that returns it is M2.4.
+**Version: `plan-v1`.** The workflow that writes it is `PlanInvestigator`
+([ADR-017](adr/ADR-017-issue-to-plan-validation.md)); the API that returns it is M2.4. So far
+only the deterministic fake model and scripted test models have produced one.
 
 ## Example
 
@@ -136,9 +137,9 @@ of the cited text. The commit is the investigation's snapshot; it is not repeate
 
 Three layers make a citation mean something:
 
-1. **The workflow (M2.3)** accepts a location only if it exists in the pinned snapshot and its
-   lines were returned to the model during the same run, and reads the excerpt from the
-   snapshot rather than from the model.
+1. **The workflow** ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)) accepts a location
+   only if it exists in the pinned snapshot and its lines were returned to the model during
+   the same run, and reads the excerpt from the snapshot rather than from the model.
 2. **This schema** refuses a plan in which a citation is not in `evidence`, an evidence entry
    is cited by nothing, or a claim that needs a citation has none.
 3. **The database** refuses to finish a plan unless every string under a `citations` key and
@@ -159,8 +160,12 @@ Which items must be cited:
 | each file with `create` | 0 or more (the file has no lines yet) |
 | the summary, each unknown | 0 or more |
 
-An item that needs a citation and has none cannot be stored. What the workflow does with such
-an item (drop it, or report insufficient evidence) is decided in M2.3.
+An item that needs a citation and has none cannot be stored. The workflow removes such an
+item, and any item with a citation that failed, before it builds the document; it also
+requires a cited summary, which this schema does not, and replaces one that fails with a fixed
+sentence. A proposal with no valid citation or no surviving step is stored as
+`insufficient_evidence` ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). What was removed
+is not in this document: it is counted in the investigation's result and listed in its events.
 
 Outcome:
 
@@ -186,9 +191,9 @@ Limits (characters are UTF-16 code units):
 
 No text is blank, and none contains a NUL character (PostgreSQL cannot store one).
 
-What this schema does **not** check, and M2.3 must: that a cited location exists in the
-snapshot and was retrieved in the run; that a `modify` or `delete` path exists in the snapshot
-and a `create` path does not. Nothing checks that the cited lines support the sentence that
+What this schema does **not** check, and the workflow does: that a cited location exists in
+the snapshot and was retrieved in the run; that a `modify` or `delete` path exists in the
+snapshot and a `create` path does not. Nothing checks that the cited lines support the sentence that
 cites them.
 
 ## The version, and the rule for changing it

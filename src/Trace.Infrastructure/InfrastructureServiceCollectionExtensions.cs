@@ -8,6 +8,7 @@ using Trace.Application.Indexing;
 using Trace.Application.Investigations;
 using Trace.Application.Issues;
 using Trace.Application.Jobs;
+using Trace.Application.Plans;
 using Trace.Application.Retrieval;
 using Trace.Infrastructure.Chat;
 using Trace.Infrastructure.Embeddings;
@@ -70,6 +71,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<GitHubWebhooks>();
         services.AddScoped<IIssueSourceResolver, ConfiguredIssueSourceResolver>();
         services.AddScoped<IssueReader>();
+        services.AddScoped<IPlanStore, EfPlanStore>();
+        services.AddScoped<PlanInvestigator>();
 
         services.TryAddSingleton(new JobOptions());
         services.AddSingleton<IJobSignal, JobSignal>();
@@ -77,6 +80,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IJobLeaseKeeper, ScopedJobLeaseKeeper>();
         services.AddScoped<IRepositorySourceResolver, ConfiguredRepositorySourceResolver>();
         services.AddScoped<IJobHandler, InvestigationJobHandler>();
+        services.AddScoped<IJobHandler, PlanJobHandler>();
         services.AddScoped<IJobHandler, IndexJobHandler>();
         services.AddScoped<JobProcessor>();
         services.AddScoped<JobService>();

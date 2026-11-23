@@ -57,7 +57,7 @@ public sealed record ModelAnswer(
     }
 
     /// <summary>Models often wrap JSON in a Markdown code fence despite being told not to.</summary>
-    private static string StripCodeFence(string text)
+    internal static string StripCodeFence(string text)
     {
         var trimmed = text.Trim();
         if (!trimmed.StartsWith("```", StringComparison.Ordinal) || !trimmed.EndsWith("```", StringComparison.Ordinal))

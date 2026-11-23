@@ -63,3 +63,9 @@ The final step (M6.4) turns this into the owner checklist.
 - [ ] Try issues on one real repository: start TRACE as in docs/owner-tasks.md Part 3, sign in, open http://localhost:5173/api/v1/repositories, then http://localhost:5173/api/v1/repositories/<repository id>/issues and .../issues/<a real issue number> in the same browser. Report what it answers if it is not a JSON list or issue; this is the first time the code meets real GitHub issues.
 - [ ] Once the real-repository try works, tick the first M2 box in docs/milestones.md or say so and a later step will.
 - [ ] Optional: read docs/adr/ADR-015-reading-github-issues.md and say if you disagree with the size limits, with 409 for a missing permission, or with cursor paging as the convention for other lists.
+
+### M2.2 Plan model and storage
+
+**Deferred:** Nothing stubbed, but nothing creates, returns or reviews a plan yet (M2.3 to M2.5). Not verified: the migration has only been applied to test databases, never to the real development database; it is applied automatically the next time the API starts in Development and is additive. The rules have no real writer yet, so M2.3 may find the strict schema or the single-transaction requirement awkward. Schema limits (30 steps, 50 files, 50 evidence entries, 2,000 characters a step) are first guesses. Known gaps in the database rules: SQL can still move an investigation out of completed after its plan is finished, and the database checks a result's citations and version, not the rest of its shape. The content hash cannot cover issue text cut off by the size limits, so an edit there goes unnoticed. The column is reviewed_at, not the handoff's approved_at, and who reviewed is not recorded.
+
+- [ ] Optional: start the API once locally so the development database picks up the Plans migration; it is additive and was tested against a database with existing rows.

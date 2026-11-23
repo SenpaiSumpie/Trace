@@ -11,7 +11,7 @@ is finished when every box under "Done when" is ticked, and not before.
 |---|---|---|
 | M0 | Working slice | Done |
 | M1 | Measured answers | Next |
-| M2 | Issue to plan | Started (step 2 of 6) |
+| M2 | Issue to plan | Started (step 3 of 6) |
 | M3 | A product you can use daily | Not started |
 | M4 | Safe to put online | Not started |
 | M5 | Live on Azure, with a demo | Not started; needs the Azure gate |
@@ -99,13 +99,31 @@ Done when:
       issues; until it has, this box stays open)
 - [ ] An issue-to-plan investigation produces a structured plan: steps, files to change,
       risks, how to verify, and what is unknown, each tied to cited source lines
+      (**not ticked yet.** Built in step M2.3: the workflow runs as a durable job, reads the
+      issue, lets the model explore with the same two read-only tools and limits as a
+      question, and stores a `plan-v1` document in which every step, risk, verification entry
+      and changed file rests on citations the server verified
+      ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). **It has only run with the
+      deterministic fake model and scripted test models, on the fixture and invented issues.**
+      The fake's plan is a list of passages matching the issue's title, not a plan. The box
+      stays open until a real model has produced a plan and someone has read it; there is
+      also no way to ask for a plan over HTTP until M2.4)
 - [ ] Issue text is treated as untrusted, like source: tests show it cannot add tools,
       reach other repositories or get uncited claims into a plan
+      (**not ticked yet.** Tests with a model scripted to obey an injected issue show: no
+      tool but the two read-only ones runs, no other repository, snapshot or path is read, no
+      limit is widened, and no step, risk, verification entry, changed file or summary gets
+      into a plan without citations that are in the snapshot and were retrieved in the run
+      ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). Two things keep the box open.
+      First, an *unknown* and the *reason of a new file* are stored without a citation by
+      design, so a model can still write an unsupported sentence there; you decide whether
+      that is acceptable or whether those two should be dropped or marked more loudly.
+      Second, no real model has been run on the injection fixture)
 - [ ] Plans are stored, shown in the web app, and can be exported as Markdown
       (**not ticked yet.** Built: the `plans` table, its rules in the database and the
       versioned result document ([ADR-016](adr/ADR-016-plan-storage.md),
-      [plan-result-schema.md](plan-result-schema.md)). Nothing creates, shows or exports a
-      plan yet)
+      [plan-result-schema.md](plan-result-schema.md)), and since step M2.3 a workflow that
+      creates and stores plans. No endpoint or page asks for, shows or exports one yet)
 - [ ] A plan can be marked as reviewed; this changes nothing in GitHub
       (**not ticked yet.** Built: the rule, in the domain and in the database: a finished plan
       can be marked reviewed once and nothing else about it can change. No endpoint or button
