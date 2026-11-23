@@ -187,8 +187,18 @@
         "Stated plainly: never run against real GitHub issues",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T21:48:52.326Z"
+      "status": "done",
+      "startedAt": "2026-11-23T21:48:52.326Z",
+      "finishedAt": "2026-11-23T22:10:57.442Z",
+      "evidence": "Commit 7d6f31d \"feat(issues): list and fetch GitHub issues, read-only and size-limited\" pushed to main; CI run 45276227022 concluded success on attempt 2 (backend, web, e2e, eval-smoke, deployment-artifacts). Attempt 1 failed in the e2e job before any code ran because the runner could not bind port 54320 for its Postgres service container; the failed job was rerun with no change. Supervisor verification: `git log -1 --oneline` shows 7d6f31d; `git status --short` empty, main in sync with origin/main; `gh run view` shows headSha 7d6f31d3, success, attempt 2, all five jobs success; my own search of src/Trace.Infrastructure/GitHub for Post/Put/Patch/Delete finds only the two authentication POSTs (login/oauth/access_token and app/installations/{id}/access_tokens) and one local database delete in the webhook handler, so no write to GitHub for issues; no issue fixture file sits inside the indexed tests/fixtures/sample-repo; `dotnet build` re-run 0 warnings 0 errors; `dotnet test tests/Trace.UnitTests --no-build` re-run 297 passed. Subagent evidence: endpoints GET /api/v1/repositories/{id}/issues (cursor paging, limit 1..100 default 30, open issues, pull requests excluded) and GET /api/v1/repositories/{id}/issues/{number}; tests Another_user_or_an_anonymous_caller_gets_404_and_github_is_never_asked, Demo_issue_list_is_paged_by_cursor_and_rejects_a_bad_limit_or_cursor, Size_limits_are_enforced_on_what_github_returns_and_every_cut_is_flagged, A_response_larger_than_the_byte_limit_is_refused_rather_than_read, The_github_client_can_only_get_apart_from_the_two_authentication_posts, Every_request_about_issues_is_a_get_and_nothing_but_authentication_is_ever_posted, Demo_repository_serves_its_fixture_issues_to_anyone_without_any_github_call, A_missing_issues_permission_is_a_specific_409_not_a_500, Spans_and_logs_carry_identifiers_counts_and_outcome_names_but_never_issue_text, A_prompt_injection_issue_is_returned_as_inert_text_and_starts_nothing. Limits: body 20,000 characters, comment 4,000, first 30 comments, 60,000 total, 8 MB per response; every cut flagged. Issue text is not stored. Tests: unit 297, security 21, integration 252, 0 failed; dotnet format --verify-no-changes exit 0. docs/github-app-setup.md has \"Adding the Issues permission to an existing app\"; ADR-015. Fixture revision unchanged; eval-smoke still passes. Nothing spent.",
+      "deferred": "Never run against real GitHub issues: everything is proven against the test stub and fixture files, and the first M2 milestone box stays unticked until the owner approves the Issues permission and tries it. GitHub's behaviours are taken from its documentation and unconfirmed (422 on the token request without the permission, 403 on an issue call, 410 for a deleted issue, redirect for a moved issue, the pull_request marker, has_issues). The GitHub settings button names in the setup doc are from memory. The API was not started by hand and the local Docker stack was not run with the new volume mount. Known limits: no rate limit of TRACE's own on issue reads and no token caching (open question 85, M4); comments after the 30th cannot be reached (83); the cursor is not stable while issues open or close between pages (84); size limits are first guesses. The CI e2e job failed once on a port bind before passing on rerun, which may recur.",
+      "ownerActions": [
+        "Add the read-only Issues permission to the GitHub App: GitHub > Settings > Developer settings > GitHub Apps > Edit next to your app > Permissions & events > Repository permissions > Issues > Read-only > Save changes. Do not choose Read and write and do not subscribe to the Issues event.",
+        "Accept the new permission on your installation: GitHub > Settings > Applications > Installed GitHub Apps > Configure next to the app > Review request > Accept new permissions.",
+        "Try issues on one real repository: start TRACE as in docs/owner-tasks.md Part 3, sign in, open http://localhost:5173/api/v1/repositories, then http://localhost:5173/api/v1/repositories/<repository id>/issues and .../issues/<a real issue number> in the same browser. Report what it answers if it is not a JSON list or issue; this is the first time the code meets real GitHub issues.",
+        "Once the real-repository try works, tick the first M2 box in docs/milestones.md or say so and a later step will.",
+        "Optional: read docs/adr/ADR-015-reading-github-issues.md and say if you disagree with the size limits, with 409 for a missing permission, or with cursor paging as the convention for other lists."
+      ]
     },
     {
       "id": "M2.2",
@@ -202,7 +212,8 @@
         "Domain rules are unit-tested, including marking reviewed twice and reviewing an unfinished plan",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T22:11:05.031Z"
     },
     {
       "id": "M2.3",

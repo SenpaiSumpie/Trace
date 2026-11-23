@@ -111,6 +111,9 @@ and in tests) unless the step says to use the real ones. When it does:
 - Settings read at startup are invisible to test overrides: read them when first needed.
 - `plainto_tsquery` ANDs its words; the search query is relaxed to OR on purpose.
 - PostgreSQL text cannot contain NUL; tool input is cleaned before it reaches SQL.
+- A finished plan is frozen by triggers, and its result is checked when the transaction
+  commits: complete the investigation, add its evidence rows and finish the plan in one
+  save (ADR-016). Changing the plan document is a new schema version (`docs/plan-result-schema.md`).
 - JSON sent to the model uses the relaxed encoder so code is not turned into `\uXXXX`.
 - An interpolated raw SQL string containing `'{}'::jsonb` needs the `{"{}"}` form.
 - Labeled evaluation questions are written before looking at retrieval results, and tuning

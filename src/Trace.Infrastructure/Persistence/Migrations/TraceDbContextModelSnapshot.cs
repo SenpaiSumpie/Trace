@@ -321,6 +321,9 @@ namespace Trace.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("Id", "SnapshotId")
                         .HasName("ak_investigations_id_snapshot_id");
 
+                    b.HasAlternateKey("Id", "SnapshotId", "RepositoryId")
+                        .HasName("ak_investigations_id_snapshot_id_repository_id");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_investigations_user_id");
 
@@ -497,6 +500,87 @@ namespace Trace.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_jobs_lease", "(status = 'running') = (lease_until IS NOT NULL AND lease_token IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_jobs_status", "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')");
+                        });
+                });
+
+            modelBuilder.Entity("Trace.Domain.Plan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("InvestigationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("investigation_id");
+
+                    b.Property<string>("IssueContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("issue_content_hash")
+                        .IsFixedLength();
+
+                    b.Property<int>("IssueNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("issue_number");
+
+                    b.Property<string>("IssueTitle")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("issue_title");
+
+                    b.Property<Guid>("RepositoryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("repository_id");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("result_json");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<string>("SchemaVersion")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("schema_version");
+
+                    b.Property<Guid>("SnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_plans");
+
+                    b.HasIndex("InvestigationId", "SnapshotId", "RepositoryId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_plans_investigation");
+
+                    b.ToTable("plans", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_plans_issue_content_hash", "issue_content_hash ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_plans_issue_number", "issue_number >= 1");
+
+                            t.HasCheckConstraint("ck_plans_issue_recorded", "(issue_title IS NULL) = (issue_content_hash IS NULL)");
+
+                            t.HasCheckConstraint("ck_plans_issue_title_single_line", "issue_title !~ '[[:cntrl:]]'");
+
+                            t.HasCheckConstraint("ck_plans_result_has_issue", "result_json IS NULL OR issue_content_hash IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_plans_result_has_schema_version", "(result_json IS NULL) = (schema_version IS NULL)");
+
+                            t.HasCheckConstraint("ck_plans_result_schema_version_matches", "result_json IS NULL OR (jsonb_typeof(result_json) = 'object' AND (result_json ->> 'schemaVersion') IS NOT DISTINCT FROM schema_version)");
+
+                            t.HasCheckConstraint("ck_plans_reviewed_is_finished", "reviewed_at IS NULL OR result_json IS NOT NULL");
                         });
                 });
 
@@ -766,6 +850,17 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_investigation_events_investigations_investigation_id");
+                });
+
+            modelBuilder.Entity("Trace.Domain.Plan", b =>
+                {
+                    b.HasOne("Trace.Domain.Investigation", null)
+                        .WithOne()
+                        .HasForeignKey("Trace.Domain.Plan", "InvestigationId", "SnapshotId", "RepositoryId")
+                        .HasPrincipalKey("Trace.Domain.Investigation", "Id", "SnapshotId", "RepositoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_plans_investigations");
                 });
 
             modelBuilder.Entity("Trace.Domain.Repository", b =>

@@ -45,6 +45,15 @@ line range. The full specification is in
   issues from files ([ADR-015](docs/adr/ADR-015-reading-github-issues.md)). **Never run against
   real GitHub issues: the GitHub App first needs a read-only Issues permission that only its
   owner can approve** ([how](docs/github-app-setup.md#adding-the-issues-permission-to-an-existing-app)).
+- Storage for implementation plans, with nothing using it yet: a `plans` table tied to one
+  issue-to-plan investigation, the issue it was made from (number, title and a hash of its
+  text; the text itself is not stored), a versioned result document
+  ([docs/plan-result-schema.md](docs/plan-result-schema.md)) whose citations are stored
+  evidence rows, and a reviewed timestamp. The database refuses a plan for the wrong
+  investigation, a citation that is not evidence of the plan's own investigation, and any
+  change to a finished plan other than marking it reviewed once
+  ([ADR-016](docs/adr/ADR-016-plan-storage.md)). **No workflow, endpoint or page creates or
+  shows a plan yet.**
 - Deployment artifacts: production images for web, API and worker, a compose file that runs the
   whole stack from them, and an Azure template (Container Apps + PostgreSQL). **Nothing has been
   deployed**; see [docs/deployment.md](docs/deployment.md).
@@ -92,8 +101,8 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan (issues can be read, but nothing makes a plan from one and no
-page shows them), a telemetry backend with dashboards or alerts, a deployment
+Not implemented: issue-to-plan (issues can be read and a plan can be stored, but nothing makes
+a plan from an issue and no page shows either), a telemetry backend with dashboards or alerts, a deployment
 pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).

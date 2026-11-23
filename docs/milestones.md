@@ -11,7 +11,7 @@ is finished when every box under "Done when" is ticked, and not before.
 |---|---|---|
 | M0 | Working slice | Done |
 | M1 | Measured answers | Next |
-| M2 | Issue to plan | Started (step 1 of 6) |
+| M2 | Issue to plan | Started (step 2 of 6) |
 | M3 | A product you can use daily | Not started |
 | M4 | Safe to put online | Not started |
 | M5 | Live on Azure, with a demo | Not started; needs the Azure gate |
@@ -102,7 +102,14 @@ Done when:
 - [ ] Issue text is treated as untrusted, like source: tests show it cannot add tools,
       reach other repositories or get uncited claims into a plan
 - [ ] Plans are stored, shown in the web app, and can be exported as Markdown
+      (**not ticked yet.** Built: the `plans` table, its rules in the database and the
+      versioned result document ([ADR-016](adr/ADR-016-plan-storage.md),
+      [plan-result-schema.md](plan-result-schema.md)). Nothing creates, shows or exports a
+      plan yet)
 - [ ] A plan can be marked as reviewed; this changes nothing in GitHub
+      (**not ticked yet.** Built: the rule, in the domain and in the database: a finished plan
+      can be marked reviewed once and nothing else about it can change. No endpoint or button
+      marks one yet)
 - [ ] The fixture has labeled issues, and plans score at least 80% on a written rubric, or
       the shortfall is written down with its cause
 - [ ] Nothing TRACE does can write to a repository, open a pull request or edit an issue

@@ -51,3 +51,15 @@ The final step (M6.4) turns this into the owner checklist.
 - [ ] Review the draft labels in eval/local/private-1/private-1.questions.json using the Review section of eval/local/private-1/notes.md, correct them, set a new datasetVersion, then rerun the baseline with the commands at the end of eval/local/private-1/2026-11-23-private-1-baseline.md (about $1.50) and compare against the first result.
 - [ ] Back up eval/local/ somewhere private; it is not in git, so a push does not save it.
 - [ ] Decide whether the two pipeline misses on the private baseline matter (an easy question that ran out of steps, and one invalid_model_output failure); a repeat run would show whether they recur.
+
+## M2 Issue to plan
+
+### M2.1 Read GitHub issues
+
+**Deferred:** Never run against real GitHub issues: everything is proven against the test stub and fixture files, and the first M2 milestone box stays unticked until the owner approves the Issues permission and tries it. GitHub's behaviours are taken from its documentation and unconfirmed (422 on the token request without the permission, 403 on an issue call, 410 for a deleted issue, redirect for a moved issue, the pull_request marker, has_issues). The GitHub settings button names in the setup doc are from memory. The API was not started by hand and the local Docker stack was not run with the new volume mount. Known limits: no rate limit of TRACE's own on issue reads and no token caching (open question 85, M4); comments after the 30th cannot be reached (83); the cursor is not stable while issues open or close between pages (84); size limits are first guesses. The CI e2e job failed once on a port bind before passing on rerun, which may recur.
+
+- [ ] Add the read-only Issues permission to the GitHub App: GitHub > Settings > Developer settings > GitHub Apps > Edit next to your app > Permissions & events > Repository permissions > Issues > Read-only > Save changes. Do not choose Read and write and do not subscribe to the Issues event.
+- [ ] Accept the new permission on your installation: GitHub > Settings > Applications > Installed GitHub Apps > Configure next to the app > Review request > Accept new permissions.
+- [ ] Try issues on one real repository: start TRACE as in docs/owner-tasks.md Part 3, sign in, open http://localhost:5173/api/v1/repositories, then http://localhost:5173/api/v1/repositories/<repository id>/issues and .../issues/<a real issue number> in the same browser. Report what it answers if it is not a JSON list or issue; this is the first time the code meets real GitHub issues.
+- [ ] Once the real-repository try works, tick the first M2 box in docs/milestones.md or say so and a later step will.
+- [ ] Optional: read docs/adr/ADR-015-reading-github-issues.md and say if you disagree with the size limits, with 409 for a missing permission, or with cursor paging as the convention for other lists.
