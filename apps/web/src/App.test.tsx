@@ -224,6 +224,23 @@ test('shows the validation message when the API rejects the question', async () 
   )
 })
 
+test('shows the API reference of a failed request so it can be found in the logs', async () => {
+  renderApp({
+    'GET /api/v1/repositories': () => json([repository]),
+    'POST /api/v1/investigations': () =>
+      new Response(JSON.stringify({ detail: 'Too many requests.' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'X-Correlation-ID': '3f2c9d0e5b7a4c1d8e6f0a1b2c3d4e5f' },
+      }),
+  })
+
+  await ask('Anything?')
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'The question could not be asked. Too many requests. (Reference: 3f2c9d0e5b7a4c1d8e6f0a1b2c3d4e5f)',
+  )
+})
+
 test('renders source text as text, never as markup', async () => {
   const hostile: Investigation = {
     ...answered,

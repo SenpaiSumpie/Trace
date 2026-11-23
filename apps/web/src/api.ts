@@ -76,12 +76,23 @@ interface ProblemDetails {
   errors?: Record<string, string[]>
 }
 
+const CORRELATION_HEADER = 'X-Correlation-ID'
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   if (!response.ok) {
-    throw new ApiError(response.status, await describeProblem(response))
+    throw new ApiError(response.status, withReference(await describeProblem(response), response))
   }
   return (await response.json()) as T
+}
+
+/**
+ * The API tags every request with an ID that also appears in its logs and traces. Showing it
+ * with an error lets whoever looks into the problem find exactly this request.
+ */
+function withReference(message: string, response: Response): string {
+  const reference = response.headers.get(CORRELATION_HEADER)
+  return reference ? `${message} (Reference: ${reference})` : message
 }
 
 async function describeProblem(response: Response): Promise<string> {

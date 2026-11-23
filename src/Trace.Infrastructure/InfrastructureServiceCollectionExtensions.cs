@@ -173,7 +173,8 @@ public static class InfrastructureServiceCollectionExtensions
                     services.GetRequiredService<IHttpClientFactory>().CreateClient(VoyageEmbeddingProvider.ProviderName),
                     RequireSecret(configuration, "Embeddings:ApiKey", "VOYAGE_API_KEY"),
                     options,
-                    services.GetRequiredService<TimeProvider>());
+                    services.GetRequiredService<TimeProvider>(),
+                    services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<VoyageEmbeddingProvider>>());
 
             case var unknown:
                 throw new InvalidOperationException($"'{EmbeddingProviderKey}' has unknown value '{unknown}'.");

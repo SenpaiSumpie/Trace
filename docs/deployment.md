@@ -104,6 +104,7 @@ version for the minutes both versions run.
 - Network isolation: the database accepts connections from any Azure service (with TLS and a
   password) rather than only from a private network.
 - Key Vault: secrets are held in the Container Apps secret store.
-- Telemetry beyond container logs in Log Analytics; no alerts; no OpenTelemetry yet.
+- A telemetry backend: the apps produce OpenTelemetry traces and metrics, but the template sets no
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, so only the JSON logs reach Log Analytics. No alerts.
 - Backups beyond the server's 7-day automatic backups; no restore drill.
 - Load, cost and latency have never been measured.

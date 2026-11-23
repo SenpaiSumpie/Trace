@@ -2,9 +2,12 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
 using Trace.Api;
 using Trace.Infrastructure;
 using Trace.Infrastructure.Persistence;
+using Trace.Infrastructure.Telemetry;
 
 const string ReadyTag = "ready";
 
@@ -18,6 +21,13 @@ builder.Services.AddProblemDetails();
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 
 builder.Services.AddTraceInfrastructure();
+builder.Services.AddTraceTelemetry(
+    builder.Configuration,
+    "trace-api",
+    // Health probes arrive every few seconds and would drown out real requests.
+    tracing => tracing.AddAspNetCoreInstrumentation(options =>
+        options.Filter = context => !context.Request.Path.StartsWithSegments("/health")),
+    metrics => metrics.AddAspNetCoreInstrumentation());
 builder.AddTraceAuthentication();
 
 // Starting investigations and index jobs costs model calls and worker time, so those requests
@@ -71,6 +81,7 @@ if (app.Configuration.GetValue("Proxy:TrustForwardedHeaders", false))
     app.UseForwardedHeaders();
 }
 
+app.UseCorrelationId();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();

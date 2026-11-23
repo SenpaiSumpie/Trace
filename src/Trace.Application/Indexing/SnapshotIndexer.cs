@@ -1,3 +1,4 @@
+using Trace.Application.Telemetry;
 using Trace.Domain;
 
 namespace Trace.Application.Indexing;
@@ -32,7 +33,50 @@ public sealed class SnapshotIndexer(ISnapshotStore store, IEmbeddingProvider emb
     {
         ArgumentNullException.ThrowIfNull(source);
 
+        using var activity = TraceTelemetry.Source.StartActivity("index.snapshot");
+        activity?.SetTag("trace.repository.id", repositoryId);
+        var started = timeProvider.GetTimestamp();
+        var outcome = "error";
+        try
+        {
+            var result = await IndexCoreAsync(repositoryId, source, jobId, activity, cancellationToken);
+            outcome = result.Outcome switch
+            {
+                IndexOutcome.Indexed => "indexed",
+                IndexOutcome.AlreadyIndexed => "already_indexed",
+                _ => "in_progress",
+            };
+            activity?.SetTag("trace.index.chunks", result.ChunkCount);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "cancelled";
+            throw;
+        }
+        finally
+        {
+            activity?.SetTag("trace.index.outcome", outcome);
+            if (outcome is "error" or "cancelled")
+            {
+                TraceTelemetry.Fail(activity, outcome);
+            }
+
+            TraceTelemetry.IndexDuration.Record(
+                timeProvider.GetElapsedTime(started).TotalSeconds,
+                new KeyValuePair<string, object?>("trace.index.outcome", outcome));
+        }
+    }
+
+    private async Task<IndexResult> IndexCoreAsync(
+        Guid repositoryId,
+        IRepositorySource source,
+        Guid? jobId,
+        System.Diagnostics.Activity? activity,
+        CancellationToken cancellationToken)
+    {
         var revision = await source.ReadAsync(cancellationToken);
+        activity?.SetTag("trace.index.files", revision.Files.Count);
 
         var existing = await FindActiveAsync(repositoryId, revision, cancellationToken);
         if (existing is not null)

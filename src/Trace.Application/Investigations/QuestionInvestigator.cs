@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Trace.Application.Retrieval;
+using Trace.Application.Telemetry;
 using Trace.Domain;
 
 namespace Trace.Application.Investigations;
@@ -120,11 +121,50 @@ public sealed class QuestionInvestigator(
     /// </summary>
     public async Task RunAsync(Guid investigationId, int attempt, int maxAttempts, CancellationToken cancellationToken)
     {
+        using var activity = TraceTelemetry.Source.StartActivity("investigation.run");
+        activity?.SetTag("trace.investigation.id", investigationId);
+        activity?.SetTag("trace.investigation.attempt", attempt);
+        var started = timeProvider.GetTimestamp();
+        var outcome = "error";
+        try
+        {
+            outcome = await RunCoreAsync(investigationId, attempt, maxAttempts, activity, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "cancelled";
+            throw;
+        }
+        finally
+        {
+            activity?.SetTag("trace.investigation.outcome", outcome);
+            if (outcome is not ("answered" or "insufficient_evidence" or "skipped"))
+            {
+                TraceTelemetry.Fail(activity, outcome);
+            }
+
+            TraceTelemetry.InvestigationDuration.Record(
+                timeProvider.GetElapsedTime(started).TotalSeconds,
+                new KeyValuePair<string, object?>("trace.investigation.outcome", outcome));
+        }
+    }
+
+    /// <summary>Runs the investigation and returns a fixed name for how the run ended.</summary>
+    private async Task<string> RunCoreAsync(
+        Guid investigationId,
+        int attempt,
+        int maxAttempts,
+        Activity? activity,
+        CancellationToken cancellationToken)
+    {
         var investigation = await store.FindForUpdateAsync(investigationId, cancellationToken);
         if (investigation is null || investigation.IsFinished)
         {
-            return;
+            return "skipped";
         }
+
+        activity?.SetTag("trace.repository.id", investigation.RepositoryId);
+        activity?.SetTag("gen_ai.request.model", model.ModelId);
 
         var snapshot = await snapshots.FindSnapshotAsync(
             investigation.RepositoryId, investigation.SnapshotId, cancellationToken)
@@ -139,7 +179,7 @@ public sealed class QuestionInvestigator(
         {
             // Fail closed: do not call the model at all once the shared budget is used up.
             await FailAsync(run, "budget_exhausted", "Failed: the daily model budget has been used up.");
-            return;
+            return "budget_exhausted";
         }
 
         investigation.Start(model.ModelId, QuestionPrompt.Version);
@@ -149,6 +189,9 @@ public sealed class QuestionInvestigator(
             attempt <= 1
                 ? $"Started investigating at commit {snapshot.CommitSha[..12]}."
                 : $"Started again (attempt {attempt}) at commit {snapshot.CommitSha[..12]}.",
+            // Lets someone holding an investigation find its trace and its log lines.
+            metadataJson: JsonSerializer.Serialize(
+                new { correlationId = TraceTelemetry.CorrelationId, traceId = activity?.TraceId.ToString() }, ToolResultJson),
             cancellationToken: cancellationToken);
 
         try
@@ -163,19 +206,27 @@ public sealed class QuestionInvestigator(
                 cancellationToken: cancellationToken);
             investigation.Complete(result.ToJson());
             await store.SaveAsync(investigation, evidence, cancellationToken);
+            activity?.SetTag("gen_ai.usage.input_tokens", investigation.InputTokens);
+            activity?.SetTag("gen_ai.usage.output_tokens", investigation.OutputTokens);
+            activity?.SetTag("trace.investigation.tool_calls", run.ToolCalls);
+            activity?.SetTag("trace.investigation.evidence", result.Evidence.Count);
+            return result.Outcome == InvestigationOutcome.Answered ? "answered" : "insufficient_evidence";
         }
         catch (InvalidModelOutputException exception)
         {
             // Asking again would cost another model run for an answer we already could not use.
             await FailAsync(run, "invalid_model_output", $"Failed: {exception.Message}");
+            return "invalid_model_output";
         }
         catch (ChatModelRefusedException)
         {
             await FailAsync(run, "model_refused", "Failed: the language model declined to respond to this request.");
+            return "model_refused";
         }
         catch (ChatModelException) when (attempt >= maxAttempts)
         {
             await FailAsync(run, "model_error", "Failed: the language model could not be reached.");
+            return "model_error";
         }
     }
 
@@ -326,16 +377,55 @@ public sealed class QuestionInvestigator(
 
     private async Task<ModelTurn> CompleteAsync(List<ModelMessage> messages, CancellationToken cancellationToken)
     {
+        using var activity = TraceTelemetry.Source.StartActivity("model.turn", ActivityKind.Client);
+        var modelTag = new KeyValuePair<string, object?>("gen_ai.request.model", model.ModelId);
+        activity?.SetTag(modelTag.Key, modelTag.Value);
+        var started = timeProvider.GetTimestamp();
+        var outcome = "error";
         try
         {
             // A snapshot of the conversation: the model must not be able to mutate our history.
             var request = new ModelRequest(QuestionPrompt.System, [.. messages], QuestionPrompt.Tools);
-            return await model.CompleteAsync(request, cancellationToken)
+            var turn = await model.CompleteAsync(request, cancellationToken)
                 ?? throw new ChatModelException("The chat model returned no turn.");
+
+            outcome = turn.ToolCalls.Count > 0 ? "tool_calls" : "final";
+            activity?.SetTag("trace.model.tool_calls", turn.ToolCalls.Count);
+            if (turn.Usage is { } usage)
+            {
+                activity?.SetTag("gen_ai.usage.input_tokens", usage.InputTokens);
+                activity?.SetTag("gen_ai.usage.output_tokens", usage.OutputTokens);
+                TraceTelemetry.ModelTokens.Add(usage.InputTokens, modelTag, new("gen_ai.token.type", "input"));
+                TraceTelemetry.ModelTokens.Add(usage.OutputTokens, modelTag, new("gen_ai.token.type", "output"));
+            }
+
+            return turn;
         }
-        catch (Exception exception) when (exception is not (OperationCanceledException or ChatModelException or ChatModelRefusedException))
+        catch (ChatModelRefusedException)
+        {
+            outcome = "model_refused";
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "cancelled";
+            throw;
+        }
+        catch (Exception exception) when (exception is not ChatModelException)
         {
             throw new ChatModelException("The chat model call failed.", exception);
+        }
+        finally
+        {
+            if (outcome is not ("tool_calls" or "final"))
+            {
+                TraceTelemetry.Fail(activity, outcome);
+            }
+
+            TraceTelemetry.ModelTurnDuration.Record(
+                timeProvider.GetElapsedTime(started).TotalSeconds,
+                modelTag,
+                new KeyValuePair<string, object?>("trace.model.outcome", outcome));
         }
     }
 
@@ -361,6 +451,12 @@ public sealed class QuestionInvestigator(
 
         run.ToolCalls++;
         var stopwatch = Stopwatch.StartNew();
+
+        // The tool name is one of two fixed values here; its arguments are never recorded.
+        using var activity = TraceTelemetry.Source.StartActivity($"tool {call.Name}");
+        var toolTag = new KeyValuePair<string, object?>("trace.tool.name", call.Name);
+        activity?.SetTag(toolTag.Key, toolTag.Value);
+        var toolOutcome = "ok";
         try
         {
             var (content, summary, resultCount, seen) = call.Name == QuestionPrompt.SearchCode
@@ -373,8 +469,11 @@ public sealed class QuestionInvestigator(
                     run, InvestigationEventType.ToolRejected,
                     $"Withheld the result of a {call.Name} call: the investigation's tool output limit was reached.",
                     call.Name, cancellationToken: cancellationToken);
+                toolOutcome = "budget_exhausted";
                 return ToolError(call, "budget_exhausted", "The tool output limit was reached. Answer with what you have.");
             }
+
+            activity?.SetTag("trace.tool.result_count", resultCount);
 
             run.ToolOutputChars += content.Length;
             foreach (var (path, startLine, endLine) in seen)
@@ -391,12 +490,23 @@ public sealed class QuestionInvestigator(
         catch (SourceToolException exception)
         {
             var code = JsonNamingPolicy.SnakeCaseLower.ConvertName(exception.Error.ToString());
+            toolOutcome = code;
             await EmitAsync(
                 run, InvestigationEventType.ToolFailed,
                 $"A {call.Name} call returned an error: {exception.Message}", call.Name,
                 JsonSerializer.Serialize(new { latencyMs = stopwatch.ElapsedMilliseconds, error = code }, ToolResultJson),
                 cancellationToken);
             return ToolError(call, code, exception.Message);
+        }
+        finally
+        {
+            if (toolOutcome != "ok")
+            {
+                TraceTelemetry.Fail(activity, toolOutcome);
+            }
+
+            TraceTelemetry.ToolDuration.Record(
+                stopwatch.Elapsed.TotalSeconds, toolTag, new KeyValuePair<string, object?>("trace.tool.outcome", toolOutcome));
         }
     }
 

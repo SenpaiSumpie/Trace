@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Pgvector;
+using Trace.Application.Telemetry;
 using Trace.Domain;
 
 namespace Trace.Infrastructure.Persistence;
@@ -320,6 +321,8 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
         job.Property(j => j.DedupeKey).HasMaxLength(Job.MaxDedupeKeyLength);
         job.Property(j => j.PayloadJson).HasColumnType("jsonb");
         job.Property(j => j.ErrorCode).HasMaxLength(Job.MaxErrorCodeLength);
+        job.Property(j => j.TraceParent).HasMaxLength(Job.MaxTraceParentLength);
+        job.Property(j => j.CorrelationId).HasMaxLength(Job.MaxCorrelationIdLength);
         job.Property(j => j.Status).HasMaxLength(20).HasConversion(
             value => EnumStorage.ToStorage(value),
             stored => EnumStorage.FromStorage<JobStatus>(stored));
@@ -339,6 +342,13 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
             {
                 entry.Property(e => e.CreatedAt).CurrentValue = now;
                 entry.Property(e => e.UpdatedAt).CurrentValue = now;
+
+                // Every way of queueing a job passes through here, so the worker can always
+                // continue the trace of the request (or job) that queued it.
+                if (entry.Entity is Job { TraceParent: null, CorrelationId: null } job)
+                {
+                    job.AttachTrace(TraceTelemetry.TraceParent, TraceTelemetry.CorrelationId);
+                }
             }
             else if (entry.State == EntityState.Modified)
             {

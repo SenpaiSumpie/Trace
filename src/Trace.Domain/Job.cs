@@ -28,6 +28,8 @@ public sealed class Job : Entity
     public const int MaxDedupeKeyLength = 200;
     public const int MaxErrorCodeLength = 100;
     public const int DefaultMaxAttempts = 3;
+    public const int MaxTraceParentLength = 64;
+    public const int MaxCorrelationIdLength = 64;
 
     private Job()
     {
@@ -64,6 +66,22 @@ public sealed class Job : Entity
     public DateTimeOffset? RequestedCancelAt { get; private set; }
 
     public string? ErrorCode { get; private set; }
+
+    /// <summary>
+    /// W3C trace context of whatever queued the job, so the worker's spans join the same trace.
+    /// Null when the job was queued outside any trace.
+    /// </summary>
+    public string? TraceParent { get; private set; }
+
+    /// <summary>Correlation ID of the request that queued the job; written to the worker's logs.</summary>
+    public string? CorrelationId { get; private set; }
+
+    /// <summary>Records where the job came from. Values that do not fit are dropped, not stored cut short.</summary>
+    public void AttachTrace(string? traceParent, string? correlationId)
+    {
+        TraceParent = traceParent is { Length: > 0 and <= MaxTraceParentLength } ? traceParent : null;
+        CorrelationId = correlationId is { Length: > 0 and <= MaxCorrelationIdLength } ? correlationId : null;
+    }
 
     public bool IsFinished => Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Cancelled;
 

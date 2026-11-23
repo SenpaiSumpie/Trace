@@ -240,6 +240,38 @@ public class ProviderAdapterTests
         Assert.Single(http.Requests);
     }
 
+    [Fact]
+    public async Task Voyage_account_refusal_logs_the_providers_reason_once()
+    {
+        var log = new RecordingLogger<VoyageEmbeddingProvider>();
+        var http = new StubHandler(_ => Json(
+            """{"detail":"You have not yet added your payment method\nand will have reduced rate limits."}""",
+            HttpStatusCode.TooManyRequests));
+        var provider = new VoyageEmbeddingProvider(new HttpClient(http), "voyage-key", FastVoyageOptions(), TimeProvider.System, log);
+
+        await Assert.ThrowsAsync<EmbeddingProviderException>(() => provider.EmbedAsync(["a"], EmbeddingPurpose.Document));
+
+        var message = Assert.Single(log.Messages);
+        Assert.Equal(
+            "The embedding API refused a request with 429: You have not yet added your payment method and will have reduced rate limits.",
+            message);
+        Assert.DoesNotContain("voyage-key", message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task Voyage_error_bodies_that_could_echo_source_are_never_logged(HttpStatusCode status)
+    {
+        var log = new RecordingLogger<VoyageEmbeddingProvider>();
+        var http = new StubHandler(_ => Json("""{"detail":"echo of input: SECRET-SOURCE"}""", status));
+        var provider = new VoyageEmbeddingProvider(new HttpClient(http), "voyage-key", FastVoyageOptions(), TimeProvider.System, log);
+
+        await Assert.ThrowsAsync<EmbeddingProviderException>(() => provider.EmbedAsync(["a"], EmbeddingPurpose.Document));
+
+        Assert.Empty(log.Messages);
+    }
+
     [Theory]
     [InlineData(2, 1024)]
     [InlineData(1, 256)]
@@ -283,6 +315,23 @@ public class ProviderAdapterTests
 
     private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    private sealed class RecordingLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
 
     private sealed record CapturedRequest(string Path, Dictionary<string, string> Headers, JsonDocument Body);
 

@@ -52,10 +52,14 @@ line range. The full specification is in
 - Durable background jobs in PostgreSQL: investigations and indexing are queued and run by the
   worker with leases, retries with backoff, takeover when a worker dies, and cancellation
   ([ADR-005](docs/adr/ADR-005-durable-jobs-and-idempotency.md)).
+- OpenTelemetry traces and metrics, and a correlation ID that follows a question from the
+  request through its job, model calls and tool calls
+  ([ADR-008](docs/adr/ADR-008-telemetry-and-correlation.md)). **Not yet sent to a real
+  collector.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, a UI for indexing your own repositories, OpenTelemetry, a
+Not implemented: issue-to-plan, a telemetry backend with dashboards or alerts, a
 deployment pipeline. Retrieval has only been measured with the fake embeddings on the 17-chunk fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
@@ -122,6 +126,21 @@ Snapshots record the embedding model they were built with, so after switching em
 provider, index again (the Index again button, or `POST /api/v1/repositories/<id>/index-jobs`) before asking
 questions. With real providers, indexed source text is sent to Voyage and retrieved passages to
 Anthropic.
+
+## Telemetry
+
+Every response carries an `X-Correlation-ID` header (send your own, or one is generated). The
+same value is on every log line of the request and of the job it queued, and the web app shows
+it next to an error as "Reference".
+
+Traces and metrics stay inside the process unless you name a collector:
+
+```sh
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317   # for the API and the worker
+```
+
+Spans carry IDs, counts, durations and outcome names only: never questions, source text,
+model output or keys.
 
 ## Database migrations
 

@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using Trace.Application.Indexing;
 using Trace.Domain;
 
@@ -35,9 +37,16 @@ public sealed class EmbeddingProviderException(string message, Exception? innerE
 /// Voyage AI embeddings over HTTP. Stored passages and search queries are embedded with their
 /// respective input type. Inputs are never truncated silently: an over-long input is an error.
 /// </summary>
-public sealed class VoyageEmbeddingProvider(HttpClient http, string apiKey, VoyageOptions options, TimeProvider timeProvider)
+public sealed partial class VoyageEmbeddingProvider(
+    HttpClient http,
+    string apiKey,
+    VoyageOptions options,
+    TimeProvider timeProvider,
+    ILogger<VoyageEmbeddingProvider>? logger = null)
     : IEmbeddingProvider
 {
+    private const int MaxReasonLength = 300;
+
     public const string ProviderName = "voyage";
 
     public string ModelId => options.Model;
@@ -114,6 +123,11 @@ public sealed class VoyageEmbeddingProvider(HttpClient http, string apiKey, Voya
                     return await ReadEmbeddingsAsync(response, batch.Count, cancellationToken);
                 }
 
+                if (attempt == 1)
+                {
+                    await LogRefusalReasonAsync(response, cancellationToken);
+                }
+
                 if (!IsTransient(response.StatusCode) || attempt >= options.MaxAttempts)
                 {
                     // The response body is not included: it can echo the input.
@@ -158,6 +172,39 @@ public sealed class VoyageEmbeddingProvider(HttpClient http, string apiKey, Voya
         return [.. data.OrderBy(item => item.Index).Select(item => item.Embedding!)];
     }
 
+    /// <summary>
+    /// Logs the provider's own explanation when it refuses a request because of the key or
+    /// the account (401, 403, 429): those say what to fix, such as a missing payment method.
+    /// Bodies of other errors are never read, because they can echo the source text sent.
+    /// </summary>
+    private async Task LogRefusalReasonAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (logger is null
+            || response.StatusCode is not (HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests))
+        {
+            return;
+        }
+
+        string? reason = null;
+        try
+        {
+            reason = (await response.Content.ReadFromJsonAsync<ErrorResponse>(cancellationToken))?.Detail;
+        }
+        catch (Exception exception) when (exception is JsonException or HttpRequestException or NotSupportedException)
+        {
+            // No readable explanation; the status code alone is logged.
+        }
+
+        var cleaned = new string([.. (reason ?? string.Empty).Select(character => char.IsControl(character) ? ' ' : character)]).Trim();
+        LogRefused(
+            logger,
+            (int)response.StatusCode,
+            cleaned.Length == 0 ? "no reason given" : cleaned.Length <= MaxReasonLength ? cleaned : cleaned[..MaxReasonLength] + "…");
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The embedding API refused a request with {Status}: {Reason}")]
+    private static partial void LogRefused(ILogger logger, int status, string reason);
+
     private static bool IsTransient(HttpStatusCode status) =>
         status is HttpStatusCode.TooManyRequests or HttpStatusCode.RequestTimeout || (int)status >= 500;
 
@@ -181,6 +228,8 @@ public sealed class VoyageEmbeddingProvider(HttpClient http, string apiKey, Voya
         [property: JsonPropertyName("truncation")] bool Truncation);
 
     private sealed record EmbeddingResponse([property: JsonPropertyName("data")] IReadOnlyList<EmbeddingItem>? Data);
+
+    private sealed record ErrorResponse([property: JsonPropertyName("detail")] string? Detail);
 
     private sealed record EmbeddingItem(
         [property: JsonPropertyName("embedding")] float[]? Embedding,

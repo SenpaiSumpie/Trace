@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Trace.Application.Telemetry;
 using Trace.Domain;
 
 namespace Trace.Application.Jobs;
@@ -38,12 +39,45 @@ public sealed partial class JobProcessor(
             return false;
         }
 
+        // From here on, spans and log lines belong to the trace and correlation ID of whatever
+        // queued the job.
+        using var activity = TraceTelemetry.StartJob(job.Kind, job.TraceParent, job.CorrelationId);
+        activity?.SetTag("trace.job.id", job.Id);
+        activity?.SetTag("trace.job.attempt", job.Attempts);
+        using var logScope = logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["CorrelationId"] = job.CorrelationId,
+            ["JobId"] = job.Id,
+        });
+        var started = timeProvider.GetTimestamp();
+        var kindTag = new KeyValuePair<string, object?>("trace.job.kind", job.Kind);
+        TraceTelemetry.JobQueueWait.Record(
+            Math.Max(0, (timeProvider.GetUtcNow() - job.AvailableAt).TotalSeconds), kindTag);
+
+        var outcome = await RunClaimedAsync(job, shutdown);
+
+        activity?.SetTag("trace.job.outcome", outcome);
+        if (outcome is not ("succeeded" or "lease_lost"))
+        {
+            TraceTelemetry.Fail(activity, outcome);
+        }
+
+        TraceTelemetry.JobDuration.Record(
+            timeProvider.GetElapsedTime(started).TotalSeconds,
+            kindTag,
+            new KeyValuePair<string, object?>("trace.job.outcome", outcome));
+        return true;
+    }
+
+    /// <summary>Runs a claimed job and returns a fixed name for how the attempt ended.</summary>
+    private async Task<string> RunClaimedAsync(Job job, CancellationToken shutdown)
+    {
         var leaseToken = job.LeaseToken!.Value;
         var handler = handlers.FirstOrDefault(candidate => candidate.Kind == job.Kind);
         if (handler is null)
         {
             await queue.FailAsync(job.Id, leaseToken, UnknownKindError, CancellationToken.None);
-            return true;
+            return UnknownKindError;
         }
 
         using var attempt = CancellationTokenSource.CreateLinkedTokenSource(shutdown);
@@ -68,34 +102,36 @@ public sealed partial class JobProcessor(
         if (lease.Lost)
         {
             // Another worker owns the job now; whatever happened here is not ours to record.
-            return true;
+            return "lease_lost";
         }
 
         if (failure is null)
         {
             await queue.SucceedAsync(job.Id, leaseToken, CancellationToken.None);
+            return "succeeded";
         }
-        else if (lease.CancelRequested)
+
+        if (lease.CancelRequested)
         {
             if (await queue.CancelAsync(job.Id, leaseToken, CancellationToken.None))
             {
                 await NotifyAbandonedAsync(job, JobStatus.Cancelled, errorCode: null);
             }
+
+            return "cancelled";
         }
-        else if (failure is OperationCanceledException && shutdown.IsCancellationRequested)
+
+        if (failure is OperationCanceledException && shutdown.IsCancellationRequested)
         {
             // Not the job's fault: make it available immediately for another worker.
             await queue.RetryAsync(job.Id, leaseToken, TimeSpan.Zero, ShutdownError, CancellationToken.None);
-        }
-        else
-        {
-            await RecordFailureAsync(job, leaseToken, failure, timedOut: timeout.IsCancellationRequested);
+            return ShutdownError;
         }
 
-        return true;
+        return await RecordFailureAsync(job, leaseToken, failure, timedOut: timeout.IsCancellationRequested);
     }
 
-    private async Task RecordFailureAsync(Job job, Guid leaseToken, Exception failure, bool timedOut)
+    private async Task<string> RecordFailureAsync(Job job, Guid leaseToken, Exception failure, bool timedOut)
     {
         var permanent = failure as JobFailedException;
         var errorCode = permanent?.ErrorCode ?? (timedOut ? TimeoutError : HandlerError);
@@ -108,13 +144,15 @@ public sealed partial class JobProcessor(
         {
             await queue.RetryAsync(
                 job.Id, leaseToken, options.RetryDelay(job.Attempts), errorCode, CancellationToken.None);
-            return;
+            return errorCode;
         }
 
         if (await queue.FailAsync(job.Id, leaseToken, errorCode, CancellationToken.None))
         {
             await NotifyAbandonedAsync(job, JobStatus.Failed, errorCode);
         }
+
+        return errorCode;
     }
 
     private async Task KeepLeaseAsync(Guid jobId, Guid leaseToken, LeaseState lease, CancellationTokenSource attempt)
