@@ -65,13 +65,19 @@ variables (`Section__Key`):
 | `Chat:Provider`, `Embeddings:Provider` | `deterministic-fake` | The same settings the API uses. The fakes are the default so that a run costs nothing unless you ask for the real models. |
 | `Chat:MaxTokensPerInvestigation`, `Chat:DailyTokenBudget` | 300,000 and 3,000,000 | The production spending limits. They apply to a run too: the daily budget counts every question of the run. |
 | `Eval:QuestionTimeoutSeconds` | 600 | A question still running after this long is stopped and recorded as failed with `timed_out`. |
-| `Eval:Prices:<model id>` | only `fake-extractive-v1`, at 0 | US dollars per million tokens: `InputPerMillion`, `OutputPerMillion`, `CacheReadPerMillion`, `CacheWritePerMillion`. |
+| `Eval:Prices:<model id>` | `fake-extractive-v1` at 0, and `claude-opus-5-5` (below) | US dollars per million tokens: `InputPerMillion`, `OutputPerMillion`, `CacheReadPerMillion`, `CacheWritePerMillion`. |
 
 Prices are configuration, never code. If the chat model has no entry, the run prints a
 warning and records every cost as `null` rather than guessing; an entry with a missing or
-invalid number stops the run. No price for a real model is shipped: before a real run, add
-an entry with all four values for the model you use, taken from the provider's current price
-list, under `Eval:Prices` in `evalsettings.json` (prices are not secrets).
+invalid number stops the run. Before a real run with another model, add an entry with all
+four values, taken from the provider's current price list, under `Eval:Prices` in
+`evalsettings.json` (prices are not secrets).
+
+The shipped entry for `claude-opus-5-5` is input 4, output 20, cache read 0.4 and cache write
+5 dollars per million tokens. **These figures come from the owner's earlier session, not from
+the provider's price page or a bill** (cache read is input x 0.1, cache write is input x
+1.25). Every cost estimate made with them carries that uncertainty until they are confirmed;
+`Eval:PricesNote` in the settings file says the same.
 
 ### The run's database
 

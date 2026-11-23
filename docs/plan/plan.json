@@ -114,8 +114,14 @@
         "No real provider is called in CI and no secret is needed",
         "CI is green on the pushed commit, and the artifact is present on that run"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T20:53:46.904Z"
+      "status": "done",
+      "startedAt": "2026-11-23T20:53:46.904Z",
+      "finishedAt": "2026-11-23T21:07:34.128Z",
+      "evidence": "Commit a11ac3e \"feat(evals): smoke run in CI gated by a check command\" pushed to main; CI run 45265940729 concluded success. Supervisor verification: `git log -1 --oneline` shows a11ac3e; `git status --short` empty, main in sync with origin/main; `gh run view 45265940729 --json jobs` shows web, e2e, backend, eval-smoke, deployment-artifacts all success; `gh api repos/SenpaiSumpie/Trace/actions/runs/45265940729/artifacts` shows \"eval-smoke 11556 expired=false\"; searching .github/workflows/ci.yml for `secrets|API_KEY` gives 0 matches. Subagent evidence: (1) CI log of the eval-smoke job: \"6 question(s): 6 answered, 0 insufficient evidence, 0 failed\" then \"Check passed: 6 question(s) of 'sample-repo' meet their expectations.\"; a tampered expectations file locally gave \"Check FAILED: 1 expectation(s) not met ... pagination-offset: expected the outcome 'insufficient_evidence' but it was 'answered'\" with exit 3; tests A_pipeline_that_stops_answering_fails_the_smoke_check, The_smoke_subset_runs_with_the_fake_providers_and_meets_its_expectations, The_check_command_exits_0_when_met_3_when_not_and_1_when_it_cannot_tell. (2) Artifact eval-smoke downloaded and found to hold the result JSON (44,572 bytes), report.md and report.json; `check` on the downloaded result exit 0. (3) Job sets no provider or key; tokens 0, cost $0.0000; unit test The_ci_workflow_runs_the_smoke_subset_checks_it_and_uploads_the_files_without_any_secret. (4) dotnet build 0 warnings; tests unit 274, security 21, integration 233, 0 failed; dotnet format --verify-no-changes exit 0. Smoke job took 43 s in CI (run 4 s, report 1 s, check 1 s). Subset is six dev-split ids in tests/fixtures/sample-repo.smoke.json; held-out questions are refused by run --expectations and check. ADR-012 records the gate design; compare still exits 0 on regressions and is not used in CI.",
+      "deferred": "Nothing stubbed. Not verified: no red CI run was produced on GitHub on purpose, so the gate's non-zero exit is proven by tests and a local run only; the upload-on-failure path has not been exercised in a real failing run. The expectations describe fake-model behaviour and say nothing about answer quality or abstention. Whether a build should ever gate on a real-model baseline is left open (open question 77).",
+      "ownerActions": [
+        "Optional: if you turn on branch protection for main, make the eval-smoke job a required check. No repository setting was changed."
+      ]
     },
     {
       "id": "M1.5",
@@ -130,7 +136,8 @@
         "If a key is missing, everything else is done and the run is recorded as an owner action instead",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T21:07:38.911Z"
     },
     {
       "id": "M1.6",

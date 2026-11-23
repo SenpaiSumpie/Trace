@@ -10,7 +10,14 @@
   },
   "Eval": {
     "QuestionTimeoutSeconds": 600,
+    "PricesNote": "US dollars per million tokens. The claude-opus-5-5 values were given by the owner from an earlier session, with cache read = input x 0.1 and cache write = input x 1.25. They have not been confirmed against the provider's price page or a bill: confirm them before relying on a cost estimate.",
     "Prices": {
+      "claude-opus-5-5": {
+        "InputPerMillion": 4,
+        "OutputPerMillion": 20,
+        "CacheReadPerMillion": 0.4,
+        "CacheWritePerMillion": 5
+      },
       "fake-extractive-v1": {
         "InputPerMillion": 0,
         "OutputPerMillion": 0,

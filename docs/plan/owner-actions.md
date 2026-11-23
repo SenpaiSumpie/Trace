@@ -27,3 +27,9 @@ The final step (M6.4) turns this into the owner checklist.
 
 - [ ] Optional: read the 23 new questions and labels in tests/fixtures/sample-repo.questions.json as a second reader, especially the 13 new held-out ones; one author wrote the fixture, the questions and the labels.
 - [ ] After the first real-model run (M1.5), read the results for the 7 unanswerable questions by hand; password-hashing is the one most likely to be reasonably answered.
+
+### M1.4 Evaluation smoke run in CI
+
+**Deferred:** Nothing stubbed. Not verified: no red CI run was produced on GitHub on purpose, so the gate's non-zero exit is proven by tests and a local run only; the upload-on-failure path has not been exercised in a real failing run. The expectations describe fake-model behaviour and say nothing about answer quality or abstention. Whether a build should ever gate on a real-model baseline is left open (open question 77).
+
+- [ ] Optional: if you turn on branch protection for main, make the eval-smoke job a required check. No repository setting was changed.

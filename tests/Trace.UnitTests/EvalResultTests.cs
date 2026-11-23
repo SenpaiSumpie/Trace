@@ -50,13 +50,22 @@ public class EvalResultTests
     }
 
     [Fact]
-    public void The_shipped_settings_price_only_the_fake_model_and_name_no_secret()
+    public void The_shipped_settings_price_the_fake_model_and_the_default_chat_model_and_name_no_secret()
     {
         var path = Path.Combine(AppContext.BaseDirectory, EvalCommand.SettingsFile);
         var configuration = new ConfigurationBuilder().AddJsonFile(path).Build();
 
         Assert.Equal(new ModelPrices(0, 0, 0, 0), ModelPrices.FromConfiguration(configuration, "fake-extractive-v1"));
-        Assert.Equal("fake-extractive-v1", Assert.Single(configuration.GetSection(ModelPrices.Section).GetChildren()).Key);
+
+        // The owner's figures for the baseline run (step M1.5), not confirmed against a bill:
+        // cache read is input x 0.1 and cache write is input x 1.25.
+        Assert.Equal(
+            new ModelPrices(4m, 20m, 0.4m, 5m),
+            ModelPrices.FromConfiguration(configuration, Trace.Infrastructure.Chat.AnthropicChatOptions.DefaultModel));
+        Assert.Equal(
+            ["claude-opus-5-5", "fake-extractive-v1"],
+            configuration.GetSection(ModelPrices.Section).GetChildren().Select(child => child.Key).Order(StringComparer.Ordinal));
+        Assert.Contains("not been confirmed", configuration["Eval:PricesNote"], StringComparison.Ordinal);
         Assert.Equal("deterministic-fake", configuration["Chat:Provider"]);
         Assert.Equal("deterministic-fake", configuration["Embeddings:Provider"]);
         Assert.DoesNotContain("ApiKey", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
