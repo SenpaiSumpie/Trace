@@ -130,3 +130,97 @@ public sealed record UserResponse(string Login);
 /// <param name="SignInAvailable">False when no GitHub App is configured.</param>
 /// <param name="CanStartWork">Whether this caller may ask questions and queue jobs.</param>
 public sealed record MeResponse(UserResponse? User, bool SignInAvailable, bool CanStartWork);
+
+/// <summary>Body of <c>POST /api/v1/repositories/{id}/issues/{number}/plans</c>.</summary>
+/// <param name="SnapshotId">The completed snapshot the plan is pinned to.</param>
+/// <param name="IdempotencyKey">Optional. Repeating a request with the same key returns the first plan.</param>
+public sealed record CreatePlanRequest(Guid SnapshotId, string? IdempotencyKey);
+
+/// <summary>The issue a plan was made from, as the plan's run read it. Untrusted content.</summary>
+/// <param name="Title">One line, cut to 256 characters; null until the run has read the issue.</param>
+public sealed record PlanIssueResponse(int Number, string? Title);
+
+/// <summary>A sentence of a plan and the evidence it rests on. The text is the model's: untrusted content.</summary>
+/// <param name="Citations">IDs of entries in <see cref="PlanDocumentResponse.Evidence"/>. Empty means the server verified nothing for it.</param>
+public sealed record PlanStatementResponse(string Text, IReadOnlyList<Guid> Citations);
+
+/// <param name="Change"><c>modify</c>, <c>create</c> or <c>delete</c>.</param>
+/// <param name="Citations">IDs of entries in <see cref="PlanDocumentResponse.Evidence"/>; a new file may have none.</param>
+public sealed record PlanFileResponse(string Path, string Change, string Reason, IReadOnlyList<Guid> Citations);
+
+/// <summary>One verified source location with the text that is there, read from the snapshot.</summary>
+/// <param name="Source">Always <c>code</c>.</param>
+public sealed record PlanEvidenceResponse(
+    Guid Id,
+    string Source,
+    string Path,
+    int StartLine,
+    int EndLine,
+    string CommitSha,
+    string Excerpt);
+
+/// <summary>
+/// The stored plan document (<c>plan-v1</c>). Steps, risks, verification entries and modified or
+/// deleted files each cite evidence the server verified. Unknowns, the reason of a new file and
+/// a summary without citations are the model's unsupported statements.
+/// </summary>
+public sealed record PlanDocumentResponse(
+    string SchemaVersion,
+    PlanStatementResponse Summary,
+    IReadOnlyList<PlanStatementResponse> Steps,
+    IReadOnlyList<PlanFileResponse> FilesToChange,
+    IReadOnlyList<PlanStatementResponse> Risks,
+    IReadOnlyList<PlanStatementResponse> Verification,
+    IReadOnlyList<PlanStatementResponse> Unknowns,
+    IReadOnlyList<PlanEvidenceResponse> Evidence);
+
+/// <summary>What validation removed from the model's proposal, as counts. These parts are not in the plan.</summary>
+/// <param name="Citations">Different cited locations that were discarded.</param>
+/// <param name="SummaryReplaced">The model's summary was not kept; a fixed sentence stands in its place.</param>
+public sealed record PlanTrimmedResponse(
+    int Citations,
+    int Steps,
+    int Files,
+    int Risks,
+    int Verification,
+    int Unknowns,
+    bool SummaryReplaced);
+
+/// <summary>Present only when the plan was read with <c>?checkIssue=true</c>.</summary>
+/// <param name="Status">
+/// <c>unchanged</c>: the issue's title, body and first comments are what the plan was made from.
+/// <c>changed</c>: they are not. <c>unavailable</c>: the issue could not be compared.
+/// </param>
+/// <param name="Code">Why the status is <c>unavailable</c>: a fixed name such as <c>issue_not_found</c> or <c>github_unavailable</c>.</param>
+public sealed record PlanIssueCheckResponse(string Status, string? Code);
+
+/// <param name="State">
+/// <c>queued</c> or <c>running</c> (unfinished: poll), <c>planned</c>, <c>insufficient_evidence</c>,
+/// <c>failed</c> or <c>cancelled</c>.
+/// </param>
+/// <param name="JobId">The background job making the plan; use it to cancel.</param>
+/// <param name="ErrorCode">Present only when <paramref name="State"/> is <c>failed</c>: a fixed name such as <c>issue_not_found</c>.</param>
+/// <param name="Plan">Present when <paramref name="State"/> is <c>planned</c> or <c>insufficient_evidence</c>.</param>
+/// <param name="Trimmed">Present with <paramref name="Plan"/>: what validation removed. It is not part of the plan document.</param>
+/// <param name="Limitations">Fixed sentences written by the server saying why the outcome is what it is.</param>
+/// <param name="ReviewedAt">When a person first acknowledged having read the plan. Not an approval; nothing outside TRACE changed.</param>
+public sealed record PlanResponse(
+    Guid PlanId,
+    Guid InvestigationId,
+    Guid? JobId,
+    Guid RepositoryId,
+    Guid SnapshotId,
+    string CommitSha,
+    PlanIssueResponse Issue,
+    string State,
+    string? ErrorCode,
+    string? ModelId,
+    string? PromptVersion,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    UsageResponse Usage,
+    PlanDocumentResponse? Plan,
+    PlanTrimmedResponse? Trimmed,
+    IReadOnlyList<string> Limitations,
+    DateTimeOffset? ReviewedAt,
+    PlanIssueCheckResponse? IssueCheck);

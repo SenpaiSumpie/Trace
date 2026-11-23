@@ -11,7 +11,7 @@ is finished when every box under "Done when" is ticked, and not before.
 |---|---|---|
 | M0 | Working slice | Done |
 | M1 | Measured answers | Next |
-| M2 | Issue to plan | Started (step 3 of 6) |
+| M2 | Issue to plan | Started (step 4 of 6) |
 | M3 | A product you can use daily | Not started |
 | M4 | Safe to put online | Not started |
 | M5 | Live on Azure, with a demo | Not started; needs the Azure gate |
@@ -106,8 +106,9 @@ Done when:
       ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). **It has only run with the
       deterministic fake model and scripted test models, on the fixture and invented issues.**
       The fake's plan is a list of passages matching the issue's title, not a plan. The box
-      stays open until a real model has produced a plan and someone has read it; there is
-      also no way to ask for a plan over HTTP until M2.4)
+      stays open until a real model has produced a plan and someone has read it. Since step
+      M2.4 a plan can be asked for and read over HTTP
+      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)))
 - [ ] Issue text is treated as untrusted, like source: tests show it cannot add tools,
       reach other repositories or get uncited claims into a plan
       (**not ticked yet.** Tests with a model scripted to obey an injected issue show: no
@@ -122,15 +123,31 @@ Done when:
 - [ ] Plans are stored, shown in the web app, and can be exported as Markdown
       (**not ticked yet.** Built: the `plans` table, its rules in the database and the
       versioned result document ([ADR-016](adr/ADR-016-plan-storage.md),
-      [plan-result-schema.md](plan-result-schema.md)), and since step M2.3 a workflow that
-      creates and stores plans. No endpoint or page asks for, shows or exports one yet)
-- [ ] A plan can be marked as reviewed; this changes nothing in GitHub
-      (**not ticked yet.** Built: the rule, in the domain and in the database: a finished plan
-      can be marked reviewed once and nothing else about it can change. No endpoint or button
-      marks one yet)
+      [plan-result-schema.md](plan-result-schema.md)), a workflow that creates and stores
+      plans, and since step M2.4 the API: ask for a plan, read it with its evidence, and
+      export it as a Markdown file in which all text from the issue, the model and the
+      repository is quoted so that it cannot change the document
+      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). **The web app does not show,
+      ask for or export a plan yet** (M2.5), so the box stays open)
+- [x] A plan can be marked as reviewed; this changes nothing in GitHub
+      (`POST /api/v1/plans/{id}/review`: one timestamp, set once, for a plan that has steps.
+      Tests compare every other stored row before and after and count the requests the GitHub
+      stub received during a review: none
+      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). The button for it comes with
+      the plan page in M2.5)
 - [ ] The fixture has labeled issues, and plans score at least 80% on a written rubric, or
       the shortfall is written down with its cause
-- [ ] Nothing TRACE does can write to a repository, open a pull request or edit an issue
+- [x] Nothing TRACE does can write to a repository, open a pull request or edit an issue
+      (Three things hold it, each with a test. The GitHub client is the only code that talks
+      to GitHub, and a test reads its source and every other source file: the only requests
+      that are not GET are the two POSTs GitHub's sign-in and installation tokens require.
+      Every installation token is asked for one repository with read permissions only. And
+      tests record every request the GitHub stub receives while indexing, listing and
+      fetching issues, and creating, reading, reviewing and exporting a plan: nothing but GET
+      apart from those two. The API has no route that changes, deletes or pushes anything to
+      GitHub. **Checked against a stub of GitHub, never the real one.** What keeps it true
+      there is yours: the GitHub App must stay registered with read-only permissions, so
+      GitHub itself would refuse a write)
 
 ## M3: A product you can use daily — size M
 

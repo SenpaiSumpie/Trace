@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Markdig" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Testcontainers.PostgreSql" />
@@ -16,6 +17,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Trace.Api\Trace.Api.csproj" />
     <ProjectReference Include="..\..\tools\Trace.Evals\Trace.Evals.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The independent Markdown parser both test projects check exports with. -->
+    <Compile Include="..\Trace.UnitTests\MarkdownOracle.cs" Link="Support\MarkdownOracle.cs" />
   </ItemGroup>
 
   <ItemGroup>

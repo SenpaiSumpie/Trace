@@ -53,7 +53,7 @@ line range. The full specification is in
   investigation, a citation that is not evidence of the plan's own investigation, and any
   change to a finished plan other than marking it reviewed once
   ([ADR-016](docs/adr/ADR-016-plan-storage.md)).
-- Issue-to-plan investigations, without a way to ask for one yet: a durable job reads the
+- Issue-to-plan investigations: a durable job reads the
   issue, shows it to the model as quoted data, lets the model explore with the same two
   read-only tools and limits as a question, and stores a plan made only of what the server
   could verify of the model's proposal. A step, risk, verification entry or changed file is
@@ -64,7 +64,20 @@ line range. The full specification is in
   **Plan generation has only run with the deterministic fake model and scripted test models,
   on the fixture and invented issues: no real model has been asked for a plan and no real
   GitHub issue has been read by a run.** The fake's plan is a list of passages matching the
-  issue's title. **No endpoint or page asks for or shows a plan yet.**
+  issue's title.
+- Plans over HTTP ([ADR-018](docs/adr/ADR-018-plan-api-and-markdown-export.md)):
+  `POST /api/v1/repositories/{id}/issues/{number}/plans` queues a plan (202, then poll;
+  idempotency key and rate limit as for a question), `GET /api/v1/plans/{id}` returns its
+  state, the issue's number and title, the pinned commit, the model and prompt version, the
+  plan with its evidence, and what validation removed; `?checkIssue=true` also says whether
+  the issue has changed since. `POST /api/v1/plans/{id}/review` records that a person read the
+  plan: one timestamp in TRACE, nothing anywhere else. `GET /api/v1/plans/{id}/export` returns
+  the plan as a Markdown file in which every piece of text from the issue, the model or the
+  repository is quoted in a code span or a fenced block, so it cannot add a heading, a link,
+  HTML or a forged "Reviewed" line; items without evidence are marked as the model's
+  unsupported statements. A plan of a repository the caller cannot see is a 404 on all four.
+  **Tested with the fake model, scripted hostile models and a stub of GitHub only. No page
+  asks for or shows a plan yet, and no export has been pasted into the real GitHub.**
 - Deployment artifacts: production images for web, API and worker, a compose file that runs the
   whole stack from them, and an Azure template (Container Apps + PostgreSQL). **Nothing has been
   deployed**; see [docs/deployment.md](docs/deployment.md).
@@ -72,8 +85,10 @@ line range. The full specification is in
   investigation and a shared daily token budget, all failing closed.
 - HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
   investigation and its events, queue a re-index, read and cancel jobs, list a repository's
-  issues (paged by cursor) and fetch one; plus `GET /health` and `GET /health/ready`.
-  Anonymous callers see only the public demo repository; in production, asking questions needs sign-in.
+  issues (paged by cursor) and fetch one, queue a plan for an issue, read it, mark it as
+  reviewed and export it as Markdown; plus `GET /health` and `GET /health/ready`.
+  Anonymous callers see only the public demo repository; in production, asking questions,
+  asking for a plan and marking one as reviewed need sign-in.
 - Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
   listings with real line numbers, what was not settled, and every step the investigation took.
 - Durable background jobs in PostgreSQL: investigations and indexing are queued and run by the
@@ -112,8 +127,9 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: asking for, showing, exporting or reviewing a plan (the workflow that makes a
-plan from an issue exists and is driven by tests only; it has never run with a real model), a telemetry backend with dashboards or alerts, a deployment
+Not implemented: a page that asks for, shows, exports or reviews a plan (the API for all four
+exists and is driven by tests only; plan generation has never run with a real model), a list of
+past plans, a telemetry backend with dashboards or alerts, a deployment
 pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).

@@ -234,8 +234,15 @@
         "A new prompt version is recorded on plan investigations; an ADR explains the validation rules",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T22:33:03.528Z"
+      "status": "done",
+      "startedAt": "2026-11-23T22:33:03.528Z",
+      "finishedAt": "2026-11-23T23:04:45.627Z",
+      "evidence": "Commit 4dcb1ed \"feat(plans): issue-to-plan workflow with server-side plan validation\" pushed to main; CI run 45284974185 concluded success on attempt 1 (backend, web, e2e, eval-smoke, deployment-artifacts). Supervisor verification: `git log -1 --oneline` shows 4dcb1ed; `git status --short` empty, main in sync with origin/main; one worktree only (the main one); `gh run view` shows headSha 4dcb1ed2, success, all five jobs success; `git diff 63a928d HEAD -- QuestionPrompt.cs` is empty; `git diff --diff-filter=M --name-only 63a928d HEAD -- tests` lists no modified test file (tests were only added); the unchecked issue read GetForRunAsync is not referenced from src/Trace.Api or src/Trace.Worker source; the M1.5 baseline result file is still present; `dotnet build` re-run 0 warnings 0 errors; `dotnet test tests/Trace.UnitTests --no-build` re-run 444 passed. Subagent evidence: (1) PlanJobTests.A_plan_for_a_fixture_issue_runs_as_a_job_with_the_fake_model_and_stores_a_validated_plan; PlanWorkflowTests.Plan_is_made_from_cited_source_validated_and_stored_with_its_evidence. (2) PlanWorkflowTests.Model_that_obeys_an_injected_issue_cannot_reach_other_tools_or_repositories_or_get_an_unverified_claim_into_the_plan (fixture issue 0014); Model_always_gets_the_same_policy_and_two_tools_and_the_issue_only_as_quoted_data; PlanPromptTests.Issue_text_cannot_add_a_line_forge_a_marker_or_close_the_quote_early. (3) A_plan_with_no_valid_citation_is_reported_as_insufficient_evidence_not_as_a_plan. (4) Plan_run_stops_calling_the_model_once_its_token_limit_is_reached; Plan_run_is_stopped_at_the_turn_limit_when_the_model_never_proposes_a_plan; Tool_calls_beyond_the_limit_are_refused_and_nothing_the_model_or_the_issue_says_widens_a_limit; Cancellation_mid_run_leaves_a_cancelled_investigation_and_an_unfinished_plan. (5) Prompt version plan-prompt-v1 asserted in the success tests; ADR-017 explains the validation rules. (6) Tests: unit 444, security 21, integration 353, 0 failed; dotnet format --verify-no-changes exit 0. Eval smoke run locally the way CI does: 6 answered, check passed; compare against the previous commit reports all six questions unchanged. Shared loop moved to InvestigationRunner; plan-v1 unchanged; no migration, endpoint or web change. Nothing spent.",
+      "deferred": "Plan generation has only run with the deterministic fake model and scripted test models on the fixture and invented issues: no real model has seen the plan prompt, no real GitHub issue has been read by a run, and the token cost of a plan run is unmeasured (the first message can carry about 60,000 characters of issue text). Both candidate M2 boxes stay unticked with notes. Known limits: an unknown and the reason for a new file are stored without a citation by design, so a model can still write an unsupported sentence there (open question 93); what was trimmed is recorded in the investigation result and events, not in the plan document, so M2.4 must show it next to the plan; removal events reuse the event type citation_rejected; \"exists in the snapshot\" means indexed, so a file the indexer skipped can be marked new, and paths compare case-sensitively; requesting a plan does not check that the issue exists (the run finds out); run-time access is not re-checked for the requesting user, as for every job.",
+      "ownerActions": [
+        "Decide whether uncited unknowns and new-file reasons are acceptable in a plan, or whether they should be dropped or marked more clearly; this keeps the \"issue text is treated as untrusted\" milestone box open (docs/open-questions.md row 93).",
+        "After M2.4 adds the endpoint, do one supervised plan run with the real model on a fixture issue, including issue 14 (the prompt-injection fixture), and read the result before more is built on the plan prompt. It needs ANTHROPIC_API_KEY and VOYAGE_API_KEY and spends money."
+      ]
     },
     {
       "id": "M2.4",
@@ -250,7 +257,8 @@
         "No code path calls a GitHub write endpoint; a test asserts it",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T23:04:52.837Z"
     },
     {
       "id": "M2.5",

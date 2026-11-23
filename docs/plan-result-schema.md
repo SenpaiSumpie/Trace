@@ -6,7 +6,9 @@ page is the contract for that JSON. The code is `PlanResult` in
 [ADR-016](adr/ADR-016-plan-storage.md).
 
 **Version: `plan-v1`.** The workflow that writes it is `PlanInvestigator`
-([ADR-017](adr/ADR-017-issue-to-plan-validation.md)); the API that returns it is M2.4. So far
+([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). `GET /api/v1/plans/{id}` returns it as
+`plan`, next to the counts of what validation removed, and `GET /api/v1/plans/{id}/export`
+writes it as Markdown ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). So far
 only the deterministic fake model and scripted test models have produced one.
 
 ## Example

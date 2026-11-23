@@ -115,6 +115,13 @@ and in tests) unless the step says to use the real ones. When it does:
   commits: complete the investigation, add its evidence rows and finish the plan in one
   save (ADR-016). Changing the plan document is a new schema version (`docs/plan-result-schema.md`).
 - JSON sent to the model uses the relaxed encoder so code is not turned into `\uXXXX`.
+- Text from an issue, a model or a repository goes into a Markdown export only through
+  `MarkdownText` (a code span or a fenced block), never by escaping characters and never
+  into a file name or a header (ADR-018). Test a new export field against the hostile table.
+- A plan and its investigation are two rows read by two queries; a run can finish between
+  them. `PlanService.GetAsync` reads the plan again when it sees that. Reuse it.
+- "Set once" is one conditional `UPDATE ... WHERE x IS NULL`, not read, change, save: two
+  requests whose clocks read the same instant both got past the reviewed-once trigger.
 - Questions and plans share one run, tool loop and citation rule (`InvestigationRunner`).
   Change it and you change both: the question baseline depends on it. A plan keeps only
   what the server verified of the model's proposal, and issue text reaches a model only

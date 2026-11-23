@@ -37,7 +37,20 @@ public interface IPlanStore
 
     /// <summary>The plan of an investigation, only if its repository is visible to the caller.</summary>
     Task<Plan?> GetByInvestigationAsync(Guid investigationId, CancellationToken cancellationToken = default);
+
+    /// <summary>A plan by its own ID with the name of its repository, only if that repository is visible to the caller.</summary>
+    Task<StoredPlan?> GetVisibleAsync(Guid planId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Marks a finished plan as reviewed, only if its repository is visible to the caller. The
+    /// only thing written is the plan's reviewed time (and its bookkeeping time).
+    /// </summary>
+    /// <returns>True if this call marked it; false if it was reviewed already, by an earlier or a concurrent call, or is not visible.</returns>
+    Task<bool> MarkReviewedAsync(Guid planId, DateTimeOffset now, CancellationToken cancellationToken = default);
 }
+
+/// <summary>A plan and the name of the repository it belongs to.</summary>
+public sealed record StoredPlan(Plan Plan, string RepositoryOwner, string RepositoryName);
 
 /// <summary>
 /// Makes an implementation plan for one issue against one pinned snapshot.

@@ -31,6 +31,7 @@ internal static partial class V1Endpoints
         v1.MapGet("/repositories/{id:guid}/issues/{number:int:min(1)}", GetIssueAsync);
         v1.MapGet("/jobs/{id:guid}", GetJobAsync).WithName(nameof(GetJobAsync));
         v1.MapPost("/jobs/{id:guid}/cancel", CancelJobAsync).RequireSignIn();
+        MapPlanEndpoints(v1);
     }
 
     private static async Task<IResult> ListRepositoriesAsync(

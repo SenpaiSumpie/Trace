@@ -73,6 +73,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IssueReader>();
         services.AddScoped<IPlanStore, EfPlanStore>();
         services.AddScoped<PlanInvestigator>();
+        services.AddScoped<PlanService>();
 
         services.TryAddSingleton(new JobOptions());
         services.AddSingleton<IJobSignal, JobSignal>();

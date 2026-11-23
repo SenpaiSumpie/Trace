@@ -69,4 +69,38 @@ internal sealed class EfPlanStore(TraceDbContext db, ICurrentUser currentUser) :
          join repository in db.VisibleRepositories(currentUser.UserId) on plan.RepositoryId equals repository.Id
          where plan.InvestigationId == investigationId
          select plan).SingleOrDefaultAsync(cancellationToken);
+
+    public Task<StoredPlan?> GetVisibleAsync(Guid planId, CancellationToken cancellationToken = default) =>
+        (from plan in db.Plans.AsNoTracking()
+         join repository in db.VisibleRepositories(currentUser.UserId) on plan.RepositoryId equals repository.Id
+         where plan.Id == planId
+         select new StoredPlan(plan, repository.Owner, repository.Name)).SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// One conditional statement rather than read, change, save: "finished, not yet reviewed,
+    /// visible to the caller" is decided by the database in the same statement that writes the
+    /// time. Of several requests arriving together exactly one updates a row; the others wait
+    /// for it, see a reviewed plan and update nothing. Reading first and saving afterwards let
+    /// two requests both report that they had marked the plan whenever their clocks read the
+    /// same instant. The rule is the one <see cref="Plan.MarkReviewed"/> states; the triggers
+    /// of the <c>Plans</c> migration still refuse anything else.
+    /// </summary>
+    public async Task<bool> MarkReviewedAsync(Guid planId, DateTimeOffset now, CancellationToken cancellationToken = default)
+    {
+        var reviewedAt = now.ToUniversalTime();
+        var visible = db.VisibleRepositories(currentUser.UserId);
+
+        var marked = await db.Plans
+            .Where(plan => plan.Id == planId
+                && plan.ResultJson != null
+                && plan.ReviewedAt == null
+                && visible.Any(repository => repository.Id == plan.RepositoryId))
+            .ExecuteUpdateAsync(
+                update => update
+                    .SetProperty(plan => plan.ReviewedAt, reviewedAt)
+                    .SetProperty(plan => plan.UpdatedAt, reviewedAt),
+                cancellationToken);
+
+        return marked == 1;
+    }
 }

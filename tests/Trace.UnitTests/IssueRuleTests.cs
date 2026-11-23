@@ -292,12 +292,48 @@ public partial class IssueRuleTests
             var text = File.ReadAllText(file);
             var name = Path.GetFileName(file);
             var readOnlyCode = name != "GitHubClient.cs"
-                && (file.StartsWith(gitHubDirectory, StringComparison.Ordinal) || name.Contains("Issue", StringComparison.Ordinal));
+                && (file.StartsWith(gitHubDirectory, StringComparison.Ordinal)
+                    || name.Contains("Issue", StringComparison.Ordinal)
+                    || name.Contains("Plan", StringComparison.Ordinal)
+                    || name.Contains("Markdown", StringComparison.Ordinal));
             string[] allowed = readOnlyCode ? ["Get"] : ["Get", "Post"];
 
             Assert.All(HttpMethodUse().Matches(text), match => Assert.Contains(match.Groups["method"].Value, allowed));
             Assert.DoesNotMatch(WriteCall(), text);
         }
+    }
+
+    /// <summary>
+    /// Creating, reading, reviewing and exporting a plan have no way to reach GitHub of their
+    /// own. The plan code (the workflow, the service behind the endpoints, the export) and the
+    /// plan endpoints never name an HTTP client or the GitHub client: the one thing they read
+    /// from outside TRACE is an issue, and only through <see cref="IssueReader"/>, whose
+    /// sources can only GET (the test above).
+    /// </summary>
+    [Fact]
+    public void Plan_code_and_plan_endpoints_reach_github_only_through_the_read_only_issue_reader()
+    {
+        var root = RepositoryRoot();
+        var files = Directory.EnumerateFiles(Path.Combine(root, "src", "Trace.Application", "Plans"), "*.cs")
+            .Append(Path.Combine(root, "src", "Trace.Api", "V1Endpoints.Plans.cs"))
+            .Append(Path.Combine(root, "src", "Trace.Infrastructure", "Persistence", "EfPlanStore.cs"))
+            .ToList();
+
+        Assert.Contains(files, file => Path.GetFileName(file) == "PlanService.cs");
+        Assert.Contains(files, file => Path.GetFileName(file) == "PlanMarkdown.cs");
+        Assert.All(files, file =>
+        {
+            var text = File.ReadAllText(file);
+            Assert.DoesNotMatch(OutboundHttp(), text);
+            Assert.Empty(HttpMethodUse().Matches(text));
+        });
+
+        // Reviewing and exporting do not even read an issue: the review and the export are
+        // written without the issue reader, which only the optional issue check uses.
+        var service = File.ReadAllText(Path.Combine(root, "src", "Trace.Application", "Plans", "PlanService.cs"));
+        Assert.Single(IssueReaderCall().Matches(service));
+        Assert.DoesNotMatch(OutboundHttp(), File.ReadAllText(Path.Combine(root, "src", "Trace.Application", "Plans", "PlanMarkdown.cs")));
+        Assert.DoesNotContain("issues.", File.ReadAllText(Path.Combine(root, "src", "Trace.Api", "V1Endpoints.Plans.cs")), StringComparison.Ordinal);
     }
 
     private static RawIssueThread Thread(string body = "body", string[]? comments = null, int? reportedComments = null) =>
@@ -317,6 +353,12 @@ public partial class IssueRuleTests
 
         return directory?.FullName ?? throw new InvalidOperationException("Could not locate Trace.slnx.");
     }
+
+    [GeneratedRegex(@"\bHttpClient\b|\bIHttpClientFactory\b|\bHttpRequestMessage\b|\bGitHubClient\b|\bGitHubIssueSource\b|\bWebRequest\b|\bSocket\b")]
+    private static partial Regex OutboundHttp();
+
+    [GeneratedRegex(@"\bissues\.\w+Async\(")]
+    private static partial Regex IssueReaderCall();
 
     [GeneratedRegex(@"HttpMethod\.(?<method>[A-Z]\w*)")]
     private static partial Regex HttpMethodUse();
