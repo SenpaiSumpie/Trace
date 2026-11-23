@@ -70,12 +70,17 @@ line range. The full specification is in
   build when a `check` command finds a written expectation unmet
   ([ADR-012](docs/adr/ADR-012-evaluation-smoke-check.md)); that guards the plumbing, not
   answer quality.
-  **Only ever run with the fake models on the fixture: there is no real-model baseline.**
+  A baseline with the real models exists for the fixture
+  ([docs/eval/2026-11-23-fixture-baseline.md](docs/eval/2026-11-23-fixture-baseline.md)):
+  on the held-out questions every citation was valid (68 of 68) and every labeled location
+  was in the top 10 (16 of 16). **It is one run of 34 questions on a 27-passage fixture, so it
+  shows the pipeline works with Claude and Voyage, not how good retrieval is on a real
+  repository.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: issue-to-plan, an evaluation baseline from the real models, a telemetry backend with
-dashboards or alerts, a deployment pipeline. Retrieval has only been measured with the fake embeddings on the 27-passage fixture.
+Not implemented: issue-to-plan, a labeled question set and baseline for a real repository, a telemetry backend with
+dashboards or alerts, a deployment pipeline. Retrieval has only been measured on the 27-passage fixture.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).
 The six tasks of the first sprint (handoff Section 15) are done. The P0 follow-ups (durable jobs, model providers, GitHub sign-in, deployment artifacts) are built; what remains is trying them for real with your keys, GitHub App and Azure subscription.
@@ -183,6 +188,15 @@ The dataset format, the result file, the definition of every metric and every op
 plumbing works, not that answers or retrieval are good: on the fixture's 34 questions, recall
 at 10 is 30 of 31 labeled locations with the bag-of-words fake embeddings, and the fake chat
 model answers all 7 questions that cannot be answered, because it does not read.
+
+With the real models (one run, 2026-11-23): 31 of 31 labeled locations in the top 10, 130 of
+130 citations valid, 6 of the 7 unanswerable questions declined, and an estimated $1.62 for
+the 34 questions (median $0.048 and 10.9 seconds each). The prices behind that estimate are
+not confirmed, and the answers were read by hand rather than scored. The full record and its
+limits are in
+[docs/eval/2026-11-23-fixture-baseline.md](docs/eval/2026-11-23-fixture-baseline.md);
+[docs/evaluation.md](docs/evaluation.md#running-with-the-real-models) says how to run it
+again, which costs money.
 
 ## Telemetry
 

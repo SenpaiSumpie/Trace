@@ -8,11 +8,12 @@ This page covers the dataset format, [how questions are added](#adding-questions
 [metrics](#metrics) computed from a result file, [comparing two runs](#compare-two-runs) and
 [the smoke check](#the-smoke-check) that CI runs.
 
-**Status:** everything here has only ever been run with the fake providers on the fixture
-repository. It has not been run against Claude or Voyage. With the fake chat model the
-outcomes say that the plumbing works, not that answers are good: that model only points at
-passages sharing words with the question. With the fake embeddings recall says nothing about
-retrieval with a real embedding model.
+**Status:** the fixture's question set has been run once with the real providers (Claude and
+Voyage) on 2026-11-23; that run is [the baseline](#the-baseline). Everything else, CI
+included, uses the fake providers. With the fake chat model the outcomes say that the plumbing
+works, not that answers are good: that model only points at passages sharing words with the
+question. With the fake embeddings recall says nothing about retrieval with a real embedding
+model.
 
 Four commands:
 
@@ -246,7 +247,44 @@ With the fake providers (2026-11-23, dataset version 2):
 passages its one search returns and abstains only when the search returns nothing, which is
 why it answered all 7 unanswerable questions. The fake embeddings are a bag of words. The
 table shows that the set can be run and scored, and gives the regression tests their floors.
-It is not a baseline; that needs the real models (step M1.5).
+It is not a baseline.
+
+### The baseline
+
+One run with the real models (2026-11-23, dataset version 2, `claude-opus-5-5` and
+`voyage-code-3`, TRACE commit `f0b2c49`). The full record, with every question, the tokens,
+the cost and what limits the result, is
+[eval/2026-11-23-fixture-baseline.md](eval/2026-11-23-fixture-baseline.md).
+
+| Metric | All | `dev` | `test` |
+|---|---|---|---|
+| Retrieval recall at 10 | 100.0% (31 of 31) | 100.0% (15 of 15) | 100.0% (16 of 16) |
+| Citation validity | 100.0% (130 of 130) | 100.0% (62 of 62) | 100.0% (68 of 68) |
+| Abstention precision | 100.0% (6 of 6) | 100.0% (2 of 2) | 100.0% (4 of 4) |
+| Abstention recall | 85.7% (6 of 7) | 66.7% (2 of 3) | 100.0% (4 of 4) |
+| Answers citing a labeled location | 100.0% (27 of 27) | 100.0% (12 of 12) | 100.0% (15 of 15) |
+| Estimated cost per question, median | $0.048 | $0.050 | $0.047 |
+| Time per question, median | 10.9 s | 11.1 s | 10.7 s |
+
+The handoff targets (citation validity at least 95% and recall at 10 at least 85% on the
+held-out split) are met. That is one run of 34 questions on a 27-passage fixture written by
+one author: recall at 10 is close to guaranteed there, and the prices behind the cost are not
+confirmed. The one missed abstention is `password-hashing`, which the model answered,
+correctly, with "there are no passwords".
+
+A baseline is recorded as a dated Markdown report under `docs/eval/`, written from the result
+file and from reading the answers. The result file itself stays in the git-ignored
+`eval/results/` ([ADR-013](adr/ADR-013-baseline-reports.md)).
+
+#### Running with the real models
+
+It costs money: about $1.60 for the 34 fixture questions at the shipped prices, plus the
+embeddings. Put `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` in the process environment (never on
+a command line or in a file that is committed), set `Chat__Provider=anthropic` and
+`Embeddings__Provider=voyage`, and run the same `run` command. Try one or two development
+questions first with `--expectations <file>` and look at the result file before the full set.
+A run that stops partway cannot be resumed or merged by the tool: only whole splits or the
+development questions an expectations file lists can be selected.
 
 ### The revision check
 
@@ -537,11 +575,15 @@ is synthetic and public.
 
 ## What is not there yet
 
-- **No baseline.** The numbers have only been computed for runs with the fake models, where
-  they show that the plumbing works. A baseline is a real-model run (step M1.5).
-- **Never run with the real models.** The cost estimate has only been checked against
-  hand-computed numbers in tests. Embedding tokens are not recorded or priced, and with a real
-  embedding provider every run indexes the source again, which costs money each time.
+- **One baseline run, on the fixture only.** There is no repeat run, so nothing says how much
+  the numbers vary between runs, and no baseline for a real repository.
+- **The cost is an unchecked estimate.** The prices are not confirmed, and the estimate has
+  been checked against hand-computed numbers but never against the provider's usage page.
+  Embedding tokens are not recorded or priced, and with a real embedding provider every run
+  indexes the source again, which costs money each time.
+- **No way to run a chosen list of held-out questions or to merge two result files.** A real
+  run that dies partway would have to be reported as partial.
+- **No measure of answer correctness.** For the baseline the answers were read by hand.
 - **No record of what the model's own searches returned**: tool calls carry result counts
   only.
 - **CI checks six fake-model questions and nothing more.** The smoke check is absolute: it

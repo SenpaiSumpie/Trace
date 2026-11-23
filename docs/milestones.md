@@ -45,24 +45,26 @@ later change to prompts, search or cost needs it.
 
 Done when:
 
-- [ ] A command runs a set of labeled questions against the real models and stores, per
+- [x] A command runs a set of labeled questions against the real models and stores, per
       question: the answer, evidence, tool calls, tokens, cost and time, with the commit,
       index version, model and prompt version
-      (the command exists and stores all of this, see [evaluation.md](evaluation.md); it has
-      only been run with the fake models, so this box stays open until a real-model run)
+      (`tools/Trace.Evals`, see [evaluation.md](evaluation.md); run with Claude and Voyage on
+      the fixture's 34 questions on 2026-11-23. The cost it stores is an estimate from prices
+      that are not yet confirmed)
 - [x] The fixture repository has at least 25 labeled questions, split into development and
       held-out sets, including at least 5 that cannot be answered
       (34 questions: 15 development, 19 held-out, 7 unanswerable; see
-      [evaluation.md](evaluation.md#the-fixtures-question-set). Only ever run with the fake
-      models)
+      [evaluation.md](evaluation.md#the-fixtures-question-set))
 - [ ] A second labeled set of at least 15 questions exists for one real repository of yours
-- [ ] A baseline is recorded for each handoff metric that applies to questions: retrieval
+- [x] A baseline is recorded for each handoff metric that applies to questions: retrieval
       recall at 10, citation validity, correct "not enough evidence" results, cost and time
-      (the metrics are defined and computed by `report`, see
-      [evaluation.md](evaluation.md#metrics); no real-model run exists, so there is no
-      baseline yet)
-- [ ] Citation validity is at least 95% and recall at 10 is at least 85% on the held-out
+      ([eval/2026-11-23-fixture-baseline.md](eval/2026-11-23-fixture-baseline.md): one run,
+      on the fixture only; the baseline for a real repository waits for the box above)
+- [x] Citation validity is at least 95% and recall at 10 is at least 85% on the held-out
       set, or the shortfall is written down with its cause
+      (fixture, held-out split: 68 of 68 citations valid and 16 of 16 labeled locations in
+      the top 10. The fixture has 27 passages, so recall at 10 is close to guaranteed there;
+      the numbers that matter will come from the real repository's set)
 - [x] A small smoke subset runs in CI with the fake models
       (six development questions, checked against written expectations by the `eval-smoke`
       job, which uploads the result file and report; see
