@@ -18,6 +18,10 @@ is finished when every box under "Done when" is ticked, and not before.
 
 Sizes are relative to each other (S, M, L), not estimates of days.
 
+M1 to M4 are broken into 25 steps in [plan/plan.json](plan/plan.json), which the step
+orchestrator works through one at a time. What it needs from you collects in
+`plan/owner-actions.md`.
+
 ## M0: Working slice — done
 
 Sign in with GitHub, index a repository, ask a question, get an answer with checked evidence.

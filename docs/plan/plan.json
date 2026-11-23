@@ -1,0 +1,388 @@
+{
+  "version": 1,
+  "title": "TRACE to v0.1 (M1-M4)",
+  "brief": "docs/TRACE_ENGINEERING_HANDOFF.md, docs/milestones.md and docs/agent-orientation.md",
+  "rules": [
+    "Do only this step. Do not start work that belongs to a later step, and do not build toward v0.2 or later.",
+    "Keep the layering: Domain depends on nothing, Application on Domain, Infrastructure on Application; the API and worker are the only hosts.",
+    "The repository is public: never commit secrets, the owner's private repository names, paths or code, or employer data. Private evaluation data lives only under the git-ignored eval/local/.",
+    "The model is untrusted: read-only allow-listed tools only, server-bound repository and snapshot, and a citation counts only if it is in the snapshot and was retrieved in the same run. Nothing may write to GitHub.",
+    "Use the fake providers unless the step says to use the real ones; when it does, stay under the spending limit it names and record tokens and estimated cost.",
+    "Write tests for success, failure, authorization and prompt-injection cases that apply. Never weaken, skip or delete a test to get green.",
+    "Finish green: dotnet build, all three test projects, dotnet format --verify-no-changes, and (if apps/web changed) lint, tests and build.",
+    "Update README.md, docs/open-questions.md and docs/milestones.md in the same commit; tick a milestone box only when it is fully true; add an ADR for any decision worth explaining.",
+    "Commit to main, push, and watch CI until it is green before reporting. A red CI run means the step is not done.",
+    "Do not create anything in Azure or any paid service, and do not register accounts. Record what only the owner can do as owner actions.",
+    "Say plainly what was not verified. Put throwaway files in the git-ignored tmp/ and delete them when the check has passed."
+  ],
+  "milestones": [
+    { "id": "M1", "title": "Measured answers" },
+    { "id": "M2", "title": "Issue to plan" },
+    { "id": "M3", "title": "A product you can use daily" },
+    { "id": "M4", "title": "Safe to put online" }
+  ],
+  "steps": [
+    {
+      "id": "M1.1",
+      "milestone": "M1",
+      "title": "Evaluation runner and stored results",
+      "goal": "Add a command-line evaluation runner (a new project under tools/, added to the solution) that takes a dataset of labeled questions and a repository snapshot, runs every question through the real investigation pipeline (the same QuestionInvestigator, tools and citation checks the API uses) and writes one result file per run. Per question it stores: the question id, outcome, answer, validated evidence, every tool call with its result count, tokens (input, output, cache read, cache write), an estimated cost, and duration. Per run it stores: the TRACE commit, dataset name and version, snapshot commit, chunker and embedding versions, chat model and prompt version, and start and end time. Prices used for the cost estimate come from configuration, not constants in code. Define and document the dataset format as an extension of tests/fixtures/sample-repo.questions.json. The runner must work end to end with the fake providers against the fixture repository using a throwaway database.",
+      "acceptance": [
+        "One documented command runs the fixture questions with the fake providers and writes a result file; the README says how to run it",
+        "The result file contains every per-question and per-run field listed in the goal, and a test asserts the schema",
+        "Questions run through the production QuestionInvestigator, not a copy of its logic",
+        "A failing or cancelled question is recorded as such and the run continues",
+        "Result files are written under a git-ignored directory by default",
+        "Unit and integration tests cover the runner; all checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M1.2",
+      "milestone": "M1",
+      "title": "Metrics and run-to-run comparison",
+      "goal": "Compute the handoff's question metrics (Section 11) from a result file: retrieval recall at 10 against labeled relevant locations, citation validity, correct abstention on unanswerable questions (precision and recall), cost and duration (median and 95th percentile), each overall and per split (development, held-out). Add a compare command that takes two result files and reports, question by question, what changed: outcome, evidence files, recall hit or miss, cost and duration, with regressions listed first. Output is a Markdown report plus machine-readable JSON.",
+      "acceptance": [
+        "A report command prints every metric listed in the goal for one result file, overall and per split",
+        "A compare command lists per-question differences between two result files, regressions first",
+        "Metric definitions are written down in docs/evaluation.md, including what counts as a relevant location and as a correct abstention",
+        "Tests cover each metric on hand-built result files, including empty and all-failed runs",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M1.3",
+      "milestone": "M1",
+      "title": "Fixture question set of 25 or more",
+      "goal": "Grow the labeled question set for tests/fixtures/sample-repo to at least 25 questions with at least 5 that the repository cannot answer, keeping a development and a held-out split and giving the dataset a version. Write the new questions and their labels from reading the fixture source, before running retrieval or the runner on them, and do not edit a label after seeing results except to fix a labeling mistake, which must be noted in the commit message. Add fixture content only if needed to make a question meaningful; if you do, update the fixture's content-derived revision and every test that pins it.",
+      "acceptance": [
+        "At least 25 questions, at least 5 unanswerable, each with a split, labeled relevant locations (path and line range) or an explicit unanswerable flag",
+        "At least 8 questions are in the held-out split and none of them was used to tune anything",
+        "The dataset has a version field and docs/evaluation.md describes how questions are added",
+        "A test validates the dataset: unique ids, every labeled path and line range exists in the fixture, both splits present",
+        "The existing retrieval floor tests still pass or are updated with the new counts and the reason",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M1.4",
+      "milestone": "M1",
+      "title": "Evaluation smoke run in CI",
+      "goal": "Run a small fixed subset of the fixture questions through the evaluation runner in CI with the fake providers, so a change that breaks the runner or the pipeline fails the build. Keep it fast (a few seconds of work beyond the database start) and deterministic. Upload the result file and report as a CI artifact.",
+      "acceptance": [
+        "The CI workflow runs the smoke subset and fails if the runner fails or a deterministic expectation is not met",
+        "The result file and report are uploaded as an artifact of the run",
+        "No real provider is called in CI and no secret is needed",
+        "CI is green on the pushed commit, and the artifact is present on that run"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M1.5",
+      "milestone": "M1",
+      "title": "Real-model baseline on the fixture",
+      "goal": "Run the full fixture question set once with the real providers (Claude and Voyage, keys from .env) and record the baseline. Index the fixture with Voyage first. Spending limit for this step: 60 questions in total including any reruns (about $15 at most); stop if the limit is reached. Record the baseline in docs/eval/ as a dated Markdown report with the run metadata, every metric, per-question outcomes, total tokens and estimated cost. Compare against the handoff targets (citation validity at least 95%, recall at 10 at least 85% on the held-out split): where a target is missed, write down the cause from the per-question results rather than tuning to pass. Do not tune prompts or retrieval in this step.",
+      "acceptance": [
+        "A dated baseline report is committed under docs/eval/ with metadata, all metrics per split, per-question outcomes, tokens and estimated cost",
+        "Citation validity and recall at 10 on the held-out split are stated against their targets, with the cause of any shortfall",
+        "The number of real-model questions run and the estimated spend are stated and are within the limit",
+        "The raw result file is kept out of git, and the report contains no secrets",
+        "If a key is missing, everything else is done and the run is recorded as an owner action instead",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M1.6",
+      "milestone": "M1",
+      "title": "Private question set for one real repository",
+      "goal": "Make it possible to evaluate against one of the owner's real repositories without anything about it entering this public repository. Add support for datasets and results under the git-ignored eval/local/ and document the workflow. If a real repository is already indexed in the local database, draft at least 15 labeled questions for it (at least 3 unanswerable) by reading its indexed source, store them only under eval/local/, and run one real-model baseline. Spending limit: 40 questions in total. The owner must review the draft labels, since only they know the code: record that as an owner action. Commit only generic documentation and code, never repository names, paths, questions or results.",
+      "acceptance": [
+        "eval/local/ is git-ignored and `git status` shows nothing from it after the step",
+        "docs/evaluation.md explains how to create, run and compare a private dataset",
+        "A draft dataset of at least 15 questions exists under eval/local/ and one baseline has been run and reported there, or the reason it could not be done is recorded as an owner action",
+        "A search of the commit diff finds no name, path or content from the private repository",
+        "Owner actions list: review the draft labels and rerun",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M2.1",
+      "milestone": "M2",
+      "title": "Read GitHub issues",
+      "goal": "Let TRACE list and fetch issues of a repository the signed-in user can see. Extend the GitHub client with read-only calls (list open issues with paging, fetch one issue with its body and comments, bounded in size) using the installation token. Add API endpoints under /api/v1/repositories/{id}/issues that apply the same visibility rule as every other repository query. Pull requests returned by the issues API are excluded. Issue text is stored only as needed and is treated as untrusted. The demo repository gets fixture issues from files so the flow works without GitHub. The GitHub App needs a new read-only Issues permission that only the owner can approve: build and test against the existing stub, update docs/github-app-setup.md, and record the approval as an owner action.",
+      "acceptance": [
+        "List and fetch endpoints exist, are paged, and return 404 for a repository the caller cannot see (tested)",
+        "Size limits on issue bodies and comments are enforced and tested",
+        "The GitHub client makes only GET requests for issues, and a test asserts no write method is used",
+        "The demo repository serves fixture issues without any GitHub call",
+        "docs/github-app-setup.md lists the Issues read-only permission and how to approve it; owner actions record it",
+        "Stated plainly: never run against real GitHub issues",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M2.2",
+      "milestone": "M2",
+      "title": "Plan model and storage",
+      "goal": "Add the plan to the domain and database as the handoff's Section 4 describes: an issue-to-plan investigation type, a stored plan with a versioned JSON result (summary, ordered steps, files to change, risks, verification steps, unknowns, each with citations), the issue it was made from (repository, number, title and a content hash so a changed issue is detectable), and a reviewed timestamp. Enforce in the database what must always hold: a plan belongs to exactly one investigation, its citations refer to the investigation's snapshot, and reviewing changes nothing but the reviewed fields. Write the plan result schema as a documented, versioned contract.",
+      "acceptance": [
+        "A migration adds the plan storage and applies cleanly on top of the existing schema (the upgrade test covers it)",
+        "Database constraints enforce the invariants listed in the goal, with tests that try to violate each one",
+        "The plan result schema is versioned, documented and round-trips through JSON in a test",
+        "Domain rules are unit-tested, including marking reviewed twice and reviewing an unfinished plan",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M2.3",
+      "milestone": "M2",
+      "title": "Issue-to-plan workflow",
+      "goal": "Implement the issue-to-plan investigation: given an issue and a pinned snapshot, the model explores with the same two read-only tools under the same limits and proposes a structured plan; the server validates it. Every file the plan says to change must exist in the snapshot or be marked as new; every claim about existing code needs a citation that exists in the snapshot and was retrieved in the run; steps whose citations fail are dropped or the plan is reported as insufficient evidence, by a rule you document. The issue title, body and comments are untrusted data: they reach the model only as quoted content, never as instructions, and cannot add tools, change the repository or snapshot, or widen limits. Runs as a durable job like questions, with events, usage, cancellation and retries. The fake model gains a deterministic plan mode so tests and the demo work without a real model.",
+      "acceptance": [
+        "A plan investigation runs end to end as a job with the fake model on the fixture and produces a stored, validated plan",
+        "Tests with a scripted hostile model and an issue containing injected instructions show it cannot call other tools, read another repository, or get an uncited or unretrieved claim into the plan",
+        "A plan with no valid citations is reported as insufficient evidence, not as a plan",
+        "Token limits, the tool-call limit and cancellation apply to plan runs (tested)",
+        "A new prompt version is recorded on plan investigations; an ADR explains the validation rules",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M2.4",
+      "milestone": "M2",
+      "title": "Plan API: create, read, review, export",
+      "goal": "Expose plans through the API: start an issue-to-plan investigation (idempotent, rate limited, signed-in only unless anonymous writes are on), read a plan with its evidence, mark it reviewed, and export it as Markdown. Marking reviewed is an acknowledgement only and changes nothing outside TRACE. The Markdown export includes the issue reference, the pinned commit, every step with its cited file and line ranges, risks, verification and unknowns, and says which model and prompt produced it. Exported text from the repository or the model is escaped so it cannot break the document structure.",
+      "acceptance": [
+        "Endpoints exist for create, read, review and Markdown export, with contract types in Trace.Contracts",
+        "Authorization tests: a caller cannot create, read, review or export a plan for a repository they cannot see",
+        "Idempotency and rate limiting behave as they do for questions (tested)",
+        "The export is tested against a golden file and against hostile content (Markdown and HTML in issue and source text)",
+        "No code path calls a GitHub write endpoint; a test asserts it",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M2.5",
+      "milestone": "M2",
+      "title": "Plan in the web app",
+      "goal": "Add the issue-to-plan flow to the web app in the existing visual style: pick a repository, list its open issues, choose one, start a plan, watch its steps as it runs, then read the plan with each step's evidence shown as real source lines. Offer Mark as reviewed and Download as Markdown. Cover empty, loading, failed, cancelled and insufficient-evidence states. All text from issues, source and the model is rendered as text, never as markup.",
+      "acceptance": [
+        "The flow works in the browser against the fixture with the fake model: choose an issue, get a plan, see evidence, mark reviewed, download Markdown",
+        "Component tests cover each state named in the goal and that hostile text is rendered as text",
+        "A Playwright test covers the whole flow, including keyboard-only use",
+        "The page works at phone width without horizontal scrolling (asserted in the browser test)",
+        "Lint, web tests and build pass; all .NET checks pass; committed, pushed, CI green including the browser tests"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M2.6",
+      "milestone": "M2",
+      "title": "Plan evaluation and baseline",
+      "goal": "Extend the evaluation runner to issue-to-plan. Add at least 6 labeled fixture issues (at least 2 held out, at least 1 that the repository gives too little evidence to plan) with the files a correct plan must touch, required plan points, and risks it must mention. Write a scoring rubric (completeness, correct files, safety, verification) that is computed mechanically where possible and lists what needs a human where not. Run one real-model baseline. Spending limit: 20 plan runs in total (about $10 at most). Target from the handoff: 80% rubric score; where it is missed, record the cause rather than tuning in this step.",
+      "acceptance": [
+        "At least 6 labeled fixture issues with the labels described, validated by a test",
+        "The rubric is documented in docs/evaluation.md and implemented in the runner, with tests on hand-built plans",
+        "A dated plan baseline report is committed under docs/eval/ with scores per issue, tokens and estimated cost, and the result against the 80% target with causes of any shortfall",
+        "Real-model runs and estimated spend are stated and within the limit; a missing key is recorded as an owner action instead",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3.1",
+      "milestone": "M3",
+      "title": "Investigation history and links",
+      "goal": "Let a user find past work. Add a paged API (cursor-based, as the handoff asks) listing the caller's investigations, newest first, filterable by repository and type, showing only what the caller may see. In the web app add a history list and give every investigation and plan its own address, so a result can be reopened, reloaded and shared with someone who has access. Add client-side routing without breaking the single-page flow that exists.",
+      "acceptance": [
+        "A cursor-paged list endpoint returns only investigations the caller may see (authorization tested with two users)",
+        "Each investigation and plan has its own URL; reloading it shows the same result",
+        "An in-progress investigation opened by its URL keeps showing progress until it finishes",
+        "Unknown or forbidden IDs show a not-found page, not an error",
+        "Component and Playwright tests cover the list, a direct link and reload; all checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3.2",
+      "milestone": "M3",
+      "title": "Progress that survives a reload",
+      "goal": "Indexing progress is lost when the page reloads, although the job continues. Add an API that returns the active jobs for the repositories the caller can see, and have the web app pick them up on load so a running index job or investigation is shown again with its progress and can be cancelled. Show the last finished index job's outcome (succeeded, failed with a plain reason, cancelled) per repository.",
+      "acceptance": [
+        "An endpoint lists active jobs per visible repository; jobs of repositories the caller cannot see are never returned (tested)",
+        "Reloading the page during an index job shows it as running and then as finished (Playwright test)",
+        "A failed index job shows a plain-language reason derived from its error code, never raw exception text",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3.3",
+      "milestone": "M3",
+      "title": "What is indexed, and what was skipped",
+      "goal": "A user cannot see what an index contains. Record at indexing time, per snapshot: files indexed, passages, total size, and files skipped grouped by reason (too large, not an allowed type, binary, possible secret, over the file or size limits) with counts and a bounded sample of paths. Expose it through the API and show it on a repository page: commit, branch, when it was indexed, with which embedding model, and the skipped summary. Paths flagged as possible secrets are counted but their contents are never stored or shown.",
+      "acceptance": [
+        "A migration stores the per-snapshot summary; existing snapshots show the summary as unavailable rather than wrong",
+        "The summary matches what the indexer actually did on the fixture, including each skip reason (tested with crafted files)",
+        "The repository page shows the summary; component and Playwright tests cover it",
+        "Snapshot immutability still holds: the summary is written before publication and cannot change afterwards (tested)",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3.4",
+      "milestone": "M3",
+      "title": "OpenAPI description and paged lists",
+      "goal": "Publish an OpenAPI description of the /api/v1 surface generated from the code, and make every list endpoint cursor-paged with a bounded page size. Document errors as ProblemDetails and the X-Correlation-ID header. Add a test that fails when the published description changes unintentionally (a committed snapshot of the document), so API changes are deliberate.",
+      "acceptance": [
+        "The OpenAPI document is served in Development and committed as a snapshot under docs/; a test compares them",
+        "Every list endpoint takes a cursor and a limit with a documented maximum, and returns the next cursor (tested, including an invalid cursor)",
+        "The web app uses the paged endpoints and can load more",
+        "docs/open-questions.md row about the API surface is updated to what is true",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3.5",
+      "milestone": "M3",
+      "title": "Deleting investigations and indexed data",
+      "goal": "Give users control over their data. A user can delete one of their own investigations (with its events, evidence and plan), and can remove the indexed data of a repository they have access to (snapshots and passages) while keeping the repository listed so it can be indexed again. Deletion is permanent and the UI says so and asks for confirmation. Running jobs for the deleted thing are cancelled first. The snapshot immutability rules must still block every other kind of change.",
+      "acceptance": [
+        "Delete endpoints exist; a user cannot delete another user's investigation or data of a repository they cannot see (tested)",
+        "Deleting removes every dependent row and leaves no orphan (tested by counting rows)",
+        "A running job for the deleted item is cancelled and ends in a final state (tested)",
+        "The immutability triggers still reject updates to published snapshots and passages (existing tests pass, plus one for the delete path)",
+        "The web app asks for confirmation in its own UI, without a browser dialog, and tests cover confirm and cancel",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3.6",
+      "milestone": "M3",
+      "title": "Usability pass and full browser coverage",
+      "goal": "Go through every screen and make it hold up: keyboard-only use with visible focus, phone width with no horizontal scrolling, reduced-motion respected, sufficient contrast, and a clear empty, loading and error state everywhere. Fix what you find. Then make the browser tests cover the whole v0.1 journey: sign in (against a local stub of GitHub's sign-in, not real GitHub), index a repository, ask a question, generate a plan, reopen it from history, delete it. Keep the existing visual identity; this is a quality pass, not a redesign.",
+      "acceptance": [
+        "A written checklist of every screen and state, with what was found and fixed, is in the commit description or docs",
+        "Playwright covers the full journey listed in the goal, including sign-in against a stub",
+        "An automated accessibility check runs on each main screen in the browser tests with no serious violations",
+        "Each main screen is asserted to have no horizontal scroll at 360 pixels wide",
+        "All checks pass; committed, pushed, CI green including the browser tests"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.1",
+      "milestone": "M4",
+      "title": "Per-user and per-repository limits",
+      "goal": "Today the token budget is one global daily number and write requests are limited by client address. Add token budgets per user and per repository over a rolling 24 hours, configurable, checked before every model call and failing closed; keep the global budget as the outer limit. Limit write requests per signed-in user, falling back to address for anonymous callers. A refused request tells the user which limit was hit and when it resets, without revealing other users' usage. Show the signed-in user their own usage for the day.",
+      "acceptance": [
+        "Per-user, per-repository and global budgets are enforced before each model call; tests show each one stopping a run with a specific error code",
+        "Rate limits are per user when signed in (tested with two users on one address)",
+        "A user can see their own usage and limit, and never another user's (tested)",
+        "Budgets apply to both questions and plans",
+        "docs/open-questions.md is updated with the limits and what is still not covered",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.2",
+      "milestone": "M4",
+      "title": "Security coverage against the handoff",
+      "goal": "Go through every must-have defense and every security test example in Section 10 of the handoff and make sure each one is enforced in code and proven by a named test. Where a defense is missing or only partly enforced, implement it. Write docs/security-coverage.md as a table: defense, where it is enforced, the test that proves it, and anything not covered with the reason. Include response security headers for the API and the nginx web container, cookie flags, cross-site request protection for state-changing endpoints, and webhook signature checks.",
+      "acceptance": [
+        "docs/security-coverage.md lists every Section 10 item with its enforcement point and a test name that exists and passes",
+        "Any item not fully covered is listed as such with a reason and an owner action if the owner must decide",
+        "State-changing endpoints reject cross-site requests (tested), and security headers are present on API and web responses (tested)",
+        "The adversarial suite shows zero successful unauthorized operations",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.3",
+      "milestone": "M4",
+      "title": "Telemetry in a real collector, and latency baselines",
+      "goal": "Traces and metrics have only ever been captured inside tests. Add an optional local collector with a trace viewer to the development compose setup, send the API's and worker's telemetry to it, and read the trace of one question end to end to confirm the request, job, model and tool spans join up and carry no question or source text. Add database tracing. Then record baseline numbers with the fake providers on the fixture and, within a limit of 15 real-model questions, with the real ones: API response time, queue wait, indexing time, model call time and end-to-end question time, each as median and 95th percentile. Record them in docs/ with the date, machine and versions. Do not set targets; these are baselines.",
+      "acceptance": [
+        "One documented command starts a local collector and viewer; the API and worker send to it when the endpoint is set",
+        "A written walk-through of one real trace is committed: its spans, their parentage across the API and worker, and confirmation that no question, source text, token or key appears",
+        "Database calls appear as spans without parameter values",
+        "A dated baseline document lists median and 95th percentile for each measurement named in the goal, for fake and real providers, with spend stated",
+        "docs/open-questions.md row on observability is updated to what is now true",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.4",
+      "milestone": "M4",
+      "title": "Retention",
+      "goal": "Nothing is ever deleted automatically. Define and enforce a retention rule: finished investigations with their events, evidence and plans, finished jobs, superseded snapshots (not the latest completed one per repository) and stored webhook delivery records are removed after configurable periods, by a scheduled job in the worker that is safe to run on several workers at once and works in bounded batches. Defaults are conservative and documented. Deleting superseded snapshots must go through the same path as user deletion and must never remove a snapshot an unfinished investigation is pinned to.",
+      "acceptance": [
+        "Retention periods are configurable with documented defaults, and can be switched off",
+        "A scheduled job removes expired data in bounded batches; tests cover each kind of data and the boundary just inside and just outside the period",
+        "Two workers running the job at once do not conflict or double-delete (tested)",
+        "A snapshot pinned by an unfinished investigation and the latest completed snapshot are never removed (tested)",
+        "An ADR records the rule; all checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.5",
+      "milestone": "M4",
+      "title": "Harden the Azure template and add a deployment pipeline",
+      "goal": "Prepare the Azure deployment without deploying anything. Change infra/azure/main.bicep so the database is reachable only from a virtual network shared with the container apps, secrets are held in Key Vault and read through managed identity, the apps send telemetry to an Azure Monitor backend, and alerts exist for failed requests, failed jobs and a spending threshold. Add a GitHub Actions workflow, started only by hand, that builds and pushes the images, deploys the template and runs the migration job, authenticating with OpenID Connect rather than a stored secret. Add a what-if or validation step that runs without credentials where possible. Do not run the workflow, do not create any Azure resource, and do not add credentials. Update docs/deployment.md to the new steps and list everything the owner must set up.",
+      "acceptance": [
+        "The template compiles in CI (`az bicep build`) with the private network, Key Vault, telemetry and alerts in place",
+        "A manually triggered deployment workflow exists and passes a workflow linter; it has never been run and the docs say so",
+        "No secret, subscription ID or tenant ID is committed",
+        "docs/deployment.md matches the template and workflow step for step, and docs/open-questions.md says plainly that none of it has been deployed",
+        "Owner actions list every Azure and GitHub setting the owner must create",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.6",
+      "milestone": "M4",
+      "title": "Backup restore rehearsal and runbook",
+      "goal": "Rehearse a restore locally and write the runbook. Add a script that backs up the local database, restores it into a fresh database, and verifies the restore by row counts and by asking a question against the restored data with the fake providers. Then write docs/runbook.md with short, concrete procedures for: a failed deployment and rollback, a leaked key (which keys exist, where each is rotated, what to check afterwards), a model or embedding provider outage, runaway spending, a stuck job queue, and restoring from backup. Each procedure names the exact command or screen and what healthy looks like afterwards. Mark any step that has not been rehearsed.",
+      "acceptance": [
+        "One command performs backup, restore into a fresh database and verification, and it has been run successfully with its output recorded",
+        "The restored database passes the migration check and answers a fixture question",
+        "docs/runbook.md covers every situation named in the goal, with exact commands and a healthy-state check for each",
+        "Every procedure that was not rehearsed is marked as such",
+        "Backup files are written to a git-ignored location and removed afterwards",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4.7",
+      "milestone": "M4",
+      "title": "Gate review before Azure",
+      "goal": "Check every box of M1 to M4 in docs/milestones.md against the repository as it actually is, by running the commands and reading the evidence rather than trusting earlier reports. Tick only what is fully true; for anything not true, either fix it if it is small or record precisely what is missing. Re-run the fixture evaluation with the fake providers and compare it with the first recorded run to confirm nothing regressed. Turn docs/plan/owner-actions.md into one ordered owner checklist in docs/owner-tasks.md, removing anything already done. Finish with a short readiness report for the Azure gate: what is done, what is not, what was never verified against a real service, and the measured cost and latency figures.",
+      "acceptance": [
+        "docs/milestones.md reflects the real state of every M1 to M4 box, each ticked box backed by a command or test named in the report",
+        "A fresh clone builds and passes every check from clean (bin and obj removed first)",
+        "The fixture evaluation was re-run and compared with the baseline; any regression is listed",
+        "docs/owner-tasks.md is a single ordered checklist of everything the owner still has to do before and at the Azure gate",
+        "A readiness report is committed under docs/ stating what is done, not done and unverified",
+        "All checks pass; committed, pushed, CI green"
+      ],
+      "status": "pending"
+    }
+  ]
+}

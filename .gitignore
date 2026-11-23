@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 tmp/
 node_modules/
 dist/
+
+# Evaluation data about private repositories: never committed (this repository is public).
+eval/local/
