@@ -221,6 +221,64 @@ test('a hostile failure name, check status and export file name never reach the 
   click.mockRestore()
 })
 
+test('hostile questions, issue titles and repository names in the history are shown as text, and no address is built from them', async () => {
+  const INV = '0193a5c0-0000-7000-8000-0000000000c1'
+  const PLAN = '0193a5c0-0000-7000-8000-0000000000d1'
+  const row = {
+    type: 'question',
+    repository: { id: 'repo-1', owner: all('repo-owner'), name: all('repo-name') },
+    state: 'completed',
+    outcome: 'answered',
+    createdAt: '2026-11-20T12:00:01Z',
+    question: null,
+    issue: null,
+    planId: null,
+  }
+  window.history.replaceState(null, '', '/history')
+  renderApp({
+    'GET /api/v1/repositories': () => json([{ ...repository, owner: all('filter-owner'), name: all('filter-name') }]),
+    'GET /api/v1/investigations?limit=20': () =>
+      json({
+        items: [
+          { ...row, investigationId: INV, question: hostile('question').join('\n') },
+          { ...row, investigationId: 'inv-plan', type: 'issue_to_plan', outcome: 'planned', issue: { number: 5, title: all('history-issue-title') }, planId: PLAN },
+          // Names the API never sends, in the places where fixed names are expected.
+          { ...row, investigationId: all('id'), type: all('type'), state: all('state'), outcome: all('outcome'), question: 'q', createdAt: all('time') },
+          { ...row, investigationId: 'x', type: 'issue_to_plan', planId: 'javascript:alert(1)//', issue: { number: 6, title: null } },
+        ],
+        nextCursor: null,
+      }),
+  })
+
+  await screen.findByText(/window\.__pwned = 'history-issue-title'/)
+  expectLiteral(['question', 'history-issue-title', 'repo-owner', 'repo-name', 'filter-owner', 'filter-name'])
+
+  // Nothing the strings describe exists. The only links are the two rows with a real ID, and
+  // each address is the fixed word plus that ID: no text of the row is in it.
+  expect(document.querySelector('script, img, iframe, svg, b, strong, em, i, object, embed, style, link, form, input')).toBeNull()
+  expect(document.querySelector('[src], [onerror], [onload], [onclick]')).toBeNull()
+  expect([...document.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual([`/investigations/${INV}`, `/plans/${PLAN}`])
+  expect([...document.querySelectorAll('[href]')]).toHaveLength(2)
+  for (const heading of document.querySelectorAll('h1, h2, h3, h4, h5, h6')) {
+    expect(heading.textContent).not.toMatch(/bold|<script|javascript:|attacker/)
+  }
+  expect((window as unknown as { __pwned?: string }).__pwned).toBeUndefined()
+
+  // A question keeps its line breaks as characters inside the link; it adds no element.
+  const question = document.querySelector(`a[href="/investigations/${INV}"]`)!
+  expect(question.textContent).toBe(hostile('question').join('\n'))
+  expect(question.children).toHaveLength(0)
+  expect(question.textContent).toContain(BIDI)
+
+  // Made-up fixed names get the generic wording; none of them is on the page, as text or otherwise.
+  for (const field of ['id', 'type', 'state', 'outcome', 'time']) {
+    expect(document.body.textContent).not.toContain(`window.__pwned = '${field}'`)
+  }
+  // A time that is not a time is left out; the other three rows have theirs.
+  expect(document.querySelectorAll('time')).toHaveLength(3)
+  expect(document.title).toBe('History · TRACE')
+})
+
 test('no source file of the web app writes markup from a string', () => {
   const sources = import.meta.glob('./**/*.{ts,tsx}', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
   const names = Object.keys(sources)

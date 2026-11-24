@@ -57,6 +57,36 @@ public sealed record InvestigationResponse(
     string? ErrorCode,
     UsageResponse Usage);
 
+/// <summary>The repository of a history row. The owner and name come from GitHub: untrusted text.</summary>
+public sealed record InvestigationRepositoryResponse(Guid Id, string Owner, string Name);
+
+/// <summary>
+/// One row of <c>GET /api/v1/investigations</c>: enough to recognise a past investigation and
+/// open it, and no more. The answer, the evidence and the plan are read from the item itself.
+/// </summary>
+/// <param name="Type"><c>question</c> or <c>issue_to_plan</c>.</param>
+/// <param name="State"><c>queued</c>, <c>running</c>, <c>completed</c>, <c>failed</c> or <c>cancelled</c>.</param>
+/// <param name="Outcome">Once completed: <c>answered</c> or <c>insufficient_evidence</c> for a question, <c>planned</c> or <c>insufficient_evidence</c> for a plan. Otherwise null.</param>
+/// <param name="Question">The question as asked (untrusted text); null for an issue-to-plan investigation.</param>
+/// <param name="Issue">For an issue-to-plan investigation: the issue's number and, once the run has read it, its title (untrusted text).</param>
+/// <param name="PlanId">For an issue-to-plan investigation: the plan to read with <c>GET /api/v1/plans/{id}</c>.</param>
+public sealed record InvestigationSummaryResponse(
+    Guid InvestigationId,
+    string Type,
+    InvestigationRepositoryResponse Repository,
+    string State,
+    string? Outcome,
+    DateTimeOffset CreatedAt,
+    string? Question,
+    PlanIssueResponse? Issue,
+    Guid? PlanId);
+
+/// <summary>
+/// One page of the caller's own investigations, newest first. Pass <paramref name="NextCursor"/>
+/// back as <c>cursor</c> to get the next page; null means there is none.
+/// </summary>
+public sealed record InvestigationListResponse(IReadOnlyList<InvestigationSummaryResponse> Items, string? NextCursor);
+
 /// <summary>Model tokens spent on the investigation so far, across all attempts.</summary>
 /// <param name="InputTokens">Every input token, including the two cached kinds.</param>
 /// <param name="CacheReadTokens">Input tokens read from the provider's prompt cache (billed at a fraction of the normal price).</param>

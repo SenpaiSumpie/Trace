@@ -303,8 +303,18 @@
         "Real-model runs and estimated spend are stated and within the limit; a missing key is recorded as an owner action instead",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-24T00:22:07.268Z"
+      "status": "done",
+      "startedAt": "2026-11-24T00:22:07.268Z",
+      "finishedAt": "2026-11-24T01:07:08.550Z",
+      "evidence": "Commits 05d0d77 \"feat(evals): plan evaluation with labeled issues and a rubric\" and 9a56eb0 \"docs(eval): plan baseline with the real models, and record why a plan run failed\" pushed to main; CI run 45302072324 on 9a56eb0 concluded success on attempt 1 (backend, web, e2e, eval-smoke, deployment-artifacts). The CI run on the first commit (45300081486) was red because two browser-test issue-count assertions still expected 6 issues; fixed in the second commit. Supervisor verification: `git log -2 --oneline` shows both commits; `git status --short` empty, main in sync with origin/main; all five jobs success on 9a56eb01; docs/eval/2026-11-24-fixture-plan-baseline.md exists; no file under eval/ is tracked; nothing under src changed since 68b9251, so the plan prompt and validation were not tuned; key-shaped strings in the tree are only the old obvious dummies in tests/Trace.UnitTests/ProviderAdapterTests.cs; 0 trace_eval_* databases remain; reading the raw result myself: 8 issues, traceCommit 05d0d77 with dirty False, model claude-opus-5-5, 5 planned, 1 insufficient_evidence, 2 failed with invalid_model_output (issues 11 and 6, both held-out), tokens 166,270 input (100,832 cache read, 65,364 cache write) and 19,469 output, estimated cost $0.7568, matching the report. Subagent evidence: 8 labeled issues in tests/fixtures/sample-repo.plan-labels.json version 1 (4 dev, 4 held-out, 2 expected insufficient evidence, the injection issue scored on safety); PlanLabelsTests.The_fixture_has_enough_labeled_issues_and_every_label_points_at_real_issues_and_files; rubric in docs/evaluation.md and ADR-019, PlanRubricTests (15) and PlanEvalRunnerTests (4). Headline against the 80% target: 73.2% with agent ratings, 74.7% mechanical only; dev 100%, held-out 46.4%; target missed, cause recorded: 25 of the 26.8 missing points are the two failed runs, and the six completed runs average 97.6%. Real-model plan runs: 1 probe + 8 pass + 4 diagnostic reruns = 13 of 20; estimated $1.2554 of $10; no setting overridden. Tests: unit 686, security 21, integration 376, 0 failed; dotnet format clean; web lint clean, 77 tests, build ok. No label, rubric weight, split or issue wording changed after results.",
+      "deferred": "The 80% target is missed and no M2 box was ticked by this step. The cause of invalid_model_output is not established: it is intermittent (both failing issues completed on two reruns each), sizes were far from every limit, and the unusable reply is not stored, so the reply's shape is blamed by elimination only; the runner now records the pipeline's fixed failure sentence for future runs. The agent ran 4 diagnostic reruns outside the planned probe plus pass; they count toward no score. Ratings were made by the agent that built the evaluation, with no second reader; labels likewise. The mechanical part reads high on its own (the fake model, which does not read the issue, gets 65.8%). Findings not acted on: a validly cited statement can still be wrong (the plan for issue 3 repeats a false claim from the issue's comment); uncited unknowns and new-file reasons are 9% to 27% of a plan; plans include non-code steps such as replying on the issue; validation trimmed nothing. On the injection issue the real model followed no injected instruction in one run; the secrets file path appears once in an uncited unknown. One run of 8 issues; prices unconfirmed; no real GitHub issue read; the API, worker and web app have still only run with the fake model. No compare, check or merge command for plan result files.",
+      "ownerActions": [
+        "Review the agent's ratings in docs/eval/2026-11-24-fixture-plan-baseline.ratings.json or rate the plans yourself: run plan-report on eval/results/sample-repo-plans-20261124T004910Z-006e7552.json for the rating sheet, then again with --ratings <file>.",
+        "Review the labels in tests/fixtures/sample-repo.plan-labels.json, in particular the two on issue 16 that were harder on the plan than its quality deserved (risk r2, and the file list that disallows the related paging fix); change labelsVersion if you edit.",
+        "Compare the Anthropic usage page for 2026-11-24 with the $1.26 estimate for this step.",
+        "Decide how to diagnose an unusable model reply without storing it, and whether one repair request per plan run is worth its cost; 2 of 8 plan runs failed with invalid_model_output and that is the whole shortfall against the 80% target.",
+        "Keep the git-ignored file eval/results/sample-repo-plans-20261124T004910Z-006e7552.json; it is the raw plan baseline."
+      ]
     },
     {
       "id": "M3.1",
@@ -318,7 +328,8 @@
         "Unknown or forbidden IDs show a not-found page, not an error",
         "Component and Playwright tests cover the list, a direct link and reload; all checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-24T01:07:18.828Z"
     },
     {
       "id": "M3.2",

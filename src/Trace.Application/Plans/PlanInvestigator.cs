@@ -128,7 +128,7 @@ public sealed class PlanInvestigator(
         }
 
         var investigation = Investigation.Create(
-            snapshot, InvestigationType.IssueToPlan, QuestionFor(command.IssueNumber), command.IdempotencyKey, currentUser.UserId);
+            snapshot, InvestigationType.IssueToPlan, QuestionFor(command.IssueNumber), command.IdempotencyKey, currentUser.UserId, currentUser.VisitorKey);
         var plan = Plan.Create(investigation, command.IssueNumber);
         var job = Job.Enqueue(
             PlanJobHandler.JobKind,

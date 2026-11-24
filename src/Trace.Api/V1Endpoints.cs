@@ -17,13 +17,16 @@ internal static partial class V1Endpoints
     public const string WriteRateLimit = "writes";
 
     private const string QuestionType = "question";
+    private const string PlanType = "issue_to_plan";
 
     public static void MapV1Endpoints(this IEndpointRouteBuilder app)
     {
         var v1 = app.MapGroup("/api/v1");
 
         v1.MapGet("/repositories", ListRepositoriesAsync);
-        v1.MapPost("/investigations", CreateInvestigationAsync).RequireRateLimiting(WriteRateLimit).RequireSignIn();
+        v1.MapPost("/investigations", CreateInvestigationAsync)
+            .RequireRateLimiting(WriteRateLimit).RequireSignIn().RememberAnonymousVisitor();
+        v1.MapGet("/investigations", ListInvestigationsAsync);
         v1.MapGet("/investigations/{id:guid}", GetInvestigationAsync).WithName(nameof(GetInvestigationAsync));
         v1.MapGet("/investigations/{id:guid}/events", GetInvestigationEventsAsync);
         v1.MapPost("/repositories/{id:guid}/index-jobs", CreateIndexJobAsync).RequireRateLimiting(WriteRateLimit).RequireSignIn();
@@ -81,6 +84,84 @@ internal static partial class V1Endpoints
                     _ => StatusCodes.Status409Conflict,
                 });
         }
+    }
+
+    /// <summary>
+    /// The caller's own investigations, newest first, without answers, evidence or plans
+    /// (ADR-020). A signed-in user is listed what that user asked; an anonymous caller what was
+    /// asked from the same browser, or nothing. Paged like the issue list: <c>limit</c> (1 to
+    /// 100, default 30) and the <c>cursor</c> of the previous page. <c>repositoryId</c> and
+    /// <c>type</c> (<c>question</c> or <c>issue_to_plan</c>) narrow the list; a repository the
+    /// caller cannot see answers 404, as everywhere else.
+    /// </summary>
+    private static async Task<IResult> ListInvestigationsAsync(
+        Guid? repositoryId,
+        string? type,
+        int? limit,
+        string? cursor,
+        InvestigationHistory history,
+        HttpResponse response,
+        CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (limit is < 1 or > InvestigationHistory.MaxPageSize)
+        {
+            errors["limit"] = [$"limit must be 1 to {InvestigationHistory.MaxPageSize}."];
+        }
+
+        InvestigationType? wanted = type switch
+        {
+            null => null,
+            QuestionType => InvestigationType.Question,
+            PlanType => InvestigationType.IssueToPlan,
+            _ => null,
+        };
+        if (type is not null && wanted is null)
+        {
+            errors["type"] = [$"type must be '{QuestionType}' or '{PlanType}'."];
+        }
+
+        if (repositoryId == Guid.Empty)
+        {
+            errors["repositoryId"] = ["repositoryId must be a repository's ID."];
+        }
+
+        if (errors.Count > 0)
+        {
+            return TypedResults.ValidationProblem(errors);
+        }
+
+        InvestigationCursor? after = null;
+        if (!string.IsNullOrEmpty(cursor) && (after = InvestigationCursor.Parse(cursor)) is null)
+        {
+            return TypedResults.Problem(
+                detail: "The cursor is not one this API returned.",
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?> { ["code"] = "invalid_cursor" });
+        }
+
+        var page = await history.ListAsync(
+            new InvestigationHistoryQuery(repositoryId, wanted, limit ?? InvestigationHistory.DefaultPageSize, after),
+            cancellationToken);
+        if (page is null)
+        {
+            return TypedResults.Problem(statusCode: StatusCodes.Status404NotFound);
+        }
+
+        // The list is one caller's own: nothing between the API and the browser may keep it.
+        response.Headers.CacheControl = "no-store";
+        return TypedResults.Ok(new InvestigationListResponse(
+            [.. page.Items.Select(item => new InvestigationSummaryResponse(
+                item.Id,
+                Snake(item.Type),
+                new InvestigationRepositoryResponse(item.RepositoryId, item.RepositoryOwner, item.RepositoryName),
+                Snake(item.State),
+                item.Outcome,
+                item.CreatedAt,
+                item.Question,
+                item.IssueNumber is { } number ? new PlanIssueResponse(number, item.IssueTitle) : null,
+                item.PlanId))],
+            page.Next?.Encode()));
     }
 
     private static async Task<IResult> GetInvestigationAsync(

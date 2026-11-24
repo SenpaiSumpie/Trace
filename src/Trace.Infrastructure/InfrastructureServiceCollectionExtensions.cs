@@ -60,6 +60,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IRepositoryCatalog, EfRepositoryCatalog>();
         services.AddScoped<IInvestigationStore, EfInvestigationStore>();
         services.AddScoped<QuestionInvestigator>();
+        services.AddScoped<IInvestigationHistoryStore, EfInvestigationHistoryStore>();
+        services.AddScoped<InvestigationHistory>();
 
         services.TryAddScoped<ICurrentUser, AnonymousUser>();
         services.AddSingleton(CreateGitHubOptions);

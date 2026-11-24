@@ -315,6 +315,12 @@ namespace Trace.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
+                    b.Property<string>("VisitorKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character(64)")
+                        .HasColumnName("visitor_key")
+                        .IsFixedLength();
+
                     b.HasKey("Id")
                         .HasName("pk_investigations");
 
@@ -324,9 +330,6 @@ namespace Trace.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("Id", "SnapshotId", "RepositoryId")
                         .HasName("ak_investigations_id_snapshot_id_repository_id");
 
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("ix_investigations_user_id");
-
                     b.HasIndex("RepositoryId", "IdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ux_investigations_idempotency_key")
@@ -335,11 +338,25 @@ namespace Trace.Infrastructure.Persistence.Migrations
                     b.HasIndex("SnapshotId", "RepositoryId")
                         .HasDatabaseName("ix_investigations_snapshot_id_repository_id");
 
+                    b.HasIndex("UserId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_investigations_user_history")
+                        .HasFilter("user_id IS NOT NULL");
+
+                    b.HasIndex("VisitorKey", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_investigations_visitor_history")
+                        .HasFilter("visitor_key IS NOT NULL");
+
                     b.ToTable("investigations", null, t =>
                         {
+                            t.HasCheckConstraint("ck_investigations_one_owner", "user_id IS NULL OR visitor_key IS NULL");
+
                             t.HasCheckConstraint("ck_investigations_state", "state IN ('queued', 'running', 'completed', 'failed', 'cancelled')");
 
                             t.HasCheckConstraint("ck_investigations_type", "type IN ('question', 'issue_to_plan')");
+
+                            t.HasCheckConstraint("ck_investigations_visitor_key", "visitor_key ~ '^[0-9a-f]{64}$'");
                         });
                 });
 

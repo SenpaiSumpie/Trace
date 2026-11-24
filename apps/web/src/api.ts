@@ -385,3 +385,50 @@ function exportFileName(disposition: string | null, planId: string): string {
   }
   return `trace-plan-${planId.replace(/[^A-Za-z0-9-]/g, '')}.md`
 }
+
+// History: the caller's own past investigations. The question, the issue title and the
+// repository's owner and name are untrusted text, shown as text and never put into an address.
+
+export interface HistoryItem {
+  investigationId: string
+  type: string
+  repository: { id: string; owner: string; name: string }
+  state: string
+  outcome: string | null
+  createdAt: string
+  question: string | null
+  issue: { number: number; title: string | null } | null
+  planId: string | null
+}
+
+export interface HistoryList {
+  items: HistoryItem[]
+  nextCursor: string | null
+}
+
+export type HistoryType = 'question' | 'issue_to_plan'
+
+export const HISTORY_PAGE_SIZE = 20
+
+/** One page of the caller's own investigations, newest first. */
+export function listHistory(
+  filter: { repositoryId: string | null; type: HistoryType | null },
+  cursor: string | null,
+): Promise<HistoryList> {
+  const query = new URLSearchParams({ limit: String(HISTORY_PAGE_SIZE) })
+  if (filter.repositoryId) {
+    query.set('repositoryId', filter.repositoryId)
+  }
+  if (filter.type) {
+    query.set('type', filter.type)
+  }
+  if (cursor) {
+    query.set('cursor', cursor)
+  }
+  return request<HistoryList>(`/api/v1/investigations?${query.toString()}`)
+}
+
+/** Whether the API said that the thing asked for does not exist or may not be seen; it never says which. */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404
+}

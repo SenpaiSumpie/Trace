@@ -18,6 +18,59 @@ internal sealed class HttpContextCurrentUser(IHttpContextAccessor accessor) : IC
 
     public Guid? UserId =>
         Guid.TryParse(accessor.HttpContext?.User.FindFirstValue(UserIdClaim), out var userId) ? userId : null;
+
+    /// <summary>The stored form of this browser's visitor cookie; null for a signed-in user or without the cookie.</summary>
+    public string? VisitorKey =>
+        UserId is null && accessor.HttpContext is { } context ? VisitorCookie.KeyOf(context) : null;
+}
+
+/// <summary>
+/// Lets an anonymous browser find its own past investigations again (ADR-020). The cookie
+/// holds 32 random bytes and nothing else; an investigation stores only the SHA-256 of them, so
+/// reading the database does not yield a cookie. It identifies a browser, not a person: it is
+/// never read for a signed-in user, grants no access to anything (reading by ID and repository
+/// visibility do not look at it) and only narrows the history list to what this browser asked.
+/// It is issued only when an anonymous caller is allowed to start an investigation and does.
+/// </summary>
+internal static class VisitorCookie
+{
+    public const string Name = "trace_visitor";
+
+    private const int TokenLength = 64;
+    private static readonly object IssuedKey = new();
+
+    /// <summary>The key investigations of this browser are stored under, or null when it has no valid cookie.</summary>
+    public static string? KeyOf(HttpContext context)
+    {
+        var token = context.Items[IssuedKey] as string ?? context.Request.Cookies[Name];
+        return IsToken(token)
+            ? Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(token!)))
+            : null;
+    }
+
+    /// <summary>Gives an anonymous browser its cookie if it has none, before the investigation is created.</summary>
+    public static void EnsureIssued(HttpContext context, IHostEnvironment environment)
+    {
+        if (context.User.Identity is { IsAuthenticated: true } || IsToken(context.Request.Cookies[Name]))
+        {
+            return;
+        }
+
+        var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(TokenLength / 2));
+        context.Items[IssuedKey] = token;
+        context.Response.Cookies.Append(Name, token, new CookieOptions
+        {
+            HttpOnly = true,
+            SameSite = SameSiteMode.Lax,
+            Secure = !environment.IsDevelopment() || context.Request.IsHttps,
+            MaxAge = TimeSpan.FromDays(180),
+            Path = "/api/v1",
+            IsEssential = true,
+        });
+    }
+
+    private static bool IsToken(string? value) =>
+        value is { Length: TokenLength } && value.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 }
 
 /// <summary>
@@ -183,6 +236,19 @@ internal static partial class AuthEndpoints
             return allowed
                 ? await next(context)
                 : Results.Problem(detail: "Sign in to do this.", statusCode: StatusCodes.Status401Unauthorized);
+        });
+
+    /// <summary>
+    /// For the requests that create an investigation: an anonymous caller who gets this far
+    /// (anonymous use is on) is given the visitor cookie its history is listed by. Put after
+    /// <see cref="RequireSignIn"/>, so a refused request sets nothing.
+    /// </summary>
+    public static RouteHandlerBuilder RememberAnonymousVisitor(this RouteHandlerBuilder endpoint) =>
+        endpoint.AddEndpointFilter(async (context, next) =>
+        {
+            VisitorCookie.EnsureIssued(
+                context.HttpContext, context.HttpContext.RequestServices.GetRequiredService<IHostEnvironment>());
+            return await next(context);
         });
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Sign-in failed: {Reason}")]

@@ -87,7 +87,9 @@ line range. The full specification is in
 - HTTP API under `/api/v1`: list repositories, queue an investigation (202, then poll), read an
   investigation and its events, queue a re-index, read and cancel jobs, list a repository's
   issues (paged by cursor) and fetch one, queue a plan for an issue, read it, mark it as
-  reviewed and export it as Markdown; plus `GET /health` and `GET /health/ready`.
+  reviewed and export it as Markdown, and list your own past investigations
+  (`GET /api/v1/investigations`, paged by cursor, filterable by repository and type); plus
+  `GET /health` and `GET /health/ready`.
   Anonymous callers see only the public demo repository; in production, asking questions,
   asking for a plan and marking one as reviewed need sign-in.
 - Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
@@ -102,7 +104,21 @@ line range. The full specification is in
   checked for a changed issue. The plan is rendered from its data as ordinary text; nothing
   from an issue, the source or the model is ever treated as markup, Markdown or a link, and
   tests feed hostile strings into every such field. **Only ever shown fake-model plans of the
-  fixture issues. Nothing survives a reload, and there is no list of past plans (M3).**
+  fixture issues.**
+- History and addresses ([ADR-020](docs/adr/ADR-020-investigation-history.md),
+  [ADR-021](docs/adr/ADR-021-web-addresses.md)): every investigation has the address
+  `/investigations/{id}` and every plan `/plans/{id}`. Asking a question or starting a plan
+  moves the browser to that address, so a reload shows the same result, an unfinished run
+  opened by its address shows progress until it finishes, and the address can be given to
+  anyone who may see the repository. An address that names nothing, or something the reader
+  may not see, shows one "Page not found" page that does not say which. `/history` lists
+  **what you asked yourself**, newest first, with filters and "Load more": a signed-in user
+  sees the investigations that user asked for, in repositories still visible to them;
+  someone who is not signed in sees what was asked from the same browser (a random,
+  `HttpOnly` visitor cookie whose hash is stored with the investigation) and nothing else.
+  Sharing a repository does not share history, and investigations from before this existed
+  that have no recorded user are in nobody's list, though still reachable by address. The web
+  app uses a small router of its own on the History API; no dependency was added.
 - Durable background jobs in PostgreSQL: investigations and indexing are queued and run by the
   worker with leases, retries with backoff, takeover when a worker dies, and cancellation
   ([ADR-005](docs/adr/ADR-005-durable-jobs-and-idempotency.md)).
@@ -153,9 +169,9 @@ line range. The full specification is in
   the whole flow; CI runs all of them.
 
 Not implemented: a cure or even a diagnosis for the plan runs that fail on a real model's
-reply (2 of 13 so far), plans from real GitHub issues, a list of past plans or a way back to
-one after a reload, a telemetry backend with dashboards or alerts, a deployment
-pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
+reply (2 of 13 so far), plans from real GitHub issues, running work shown again after a
+reload anywhere but at its own address, deleting an investigation, a telemetry backend with
+dashboards or alerts, a deployment pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
 What is left before v0.1, and when Azure comes in, is in [docs/milestones.md](docs/milestones.md).

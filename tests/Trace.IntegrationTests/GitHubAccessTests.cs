@@ -21,7 +21,7 @@ namespace Trace.IntegrationTests;
 /// a stub that answers in GitHub's documented formats. The real GitHub is never called.
 /// </summary>
 [Collection(PostgresCollection.Name)]
-public sealed class GitHubAccessTests(PostgresFixture postgres) : IAsyncLifetime
+public sealed partial class GitHubAccessTests(PostgresFixture postgres) : IAsyncLifetime
 {
     private const string WebhookSecret = "webhook-test-secret";
     private const string HeadSha = "1234567890abcdef1234567890abcdef12345678";

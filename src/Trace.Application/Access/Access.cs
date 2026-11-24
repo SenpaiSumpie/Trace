@@ -10,6 +10,14 @@ namespace Trace.Application.Access;
 public interface ICurrentUser
 {
     Guid? UserId { get; }
+
+    /// <summary>
+    /// For an anonymous caller whose browser carries a visitor cookie: the stored form of that
+    /// cookie (<c>Investigation.VisitorKey</c>). It identifies a browser, not a person, and
+    /// grants nothing except listing what that browser asked. Null for a signed-in user, for a
+    /// caller without the cookie, and outside a request.
+    /// </summary>
+    string? VisitorKey => null;
 }
 
 public sealed class AnonymousUser : ICurrentUser

@@ -22,6 +22,7 @@ public sealed class Investigation : Entity
     public const int MaxIdempotencyKeyLength = 100;
     public const int MaxVersionLength = 100;
     public const int MaxErrorCodeLength = 100;
+    public const int VisitorKeyLength = 64;
 
     private Investigation()
     {
@@ -39,6 +40,13 @@ public sealed class Investigation : Entity
 
     /// <summary>Who asked; null for anonymous use of the public demo repository.</summary>
     public Guid? UserId { get; private set; }
+
+    /// <summary>
+    /// For an anonymous request: the lowercase hex SHA-256 of the random token in the asking
+    /// browser's visitor cookie, so that browser, and nobody else, can list what it asked. Null
+    /// for a signed-in user and for rows from before history existed. Never the token itself.
+    /// </summary>
+    public string? VisitorKey { get; private set; }
 
     /// <summary>Client-supplied key; a repeated request with the same key returns this investigation.</summary>
     public string? IdempotencyKey { get; private set; }
@@ -71,12 +79,20 @@ public sealed class Investigation : Entity
         InvestigationType type,
         string question,
         string? idempotencyKey = null,
-        Guid? userId = null)
+        Guid? userId = null,
+        string? visitorKey = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         if (snapshot.Status != SnapshotStatus.Completed)
         {
             throw new InvalidOperationException("An investigation can only pin a completed snapshot.");
+        }
+
+        if (visitorKey is not null && (userId is not null || !IsVisitorKey(visitorKey)))
+        {
+            throw new ArgumentException(
+                "A visitor key is 64 lowercase hex characters and is only for an investigation without a user.",
+                nameof(visitorKey));
         }
 
         return new Investigation
@@ -87,6 +103,7 @@ public sealed class Investigation : Entity
             Question = Guard.Required(question, MaxQuestionLength, nameof(question)),
             State = InvestigationState.Queued,
             UserId = userId,
+            VisitorKey = visitorKey,
             IdempotencyKey = idempotencyKey is null
                 ? null
                 : Guard.Required(idempotencyKey, MaxIdempotencyKeyLength, nameof(idempotencyKey)),
@@ -141,6 +158,10 @@ public sealed class Investigation : Entity
         RequireUnfinished();
         State = InvestigationState.Cancelled;
     }
+
+    /// <summary>Whether the text has the shape of a visitor key: a lowercase hex SHA-256.</summary>
+    public static bool IsVisitorKey(string? value) =>
+        value is { Length: VisitorKeyLength } && value.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
     public bool IsFinished =>
         State is InvestigationState.Completed or InvestigationState.Failed or InvestigationState.Cancelled;

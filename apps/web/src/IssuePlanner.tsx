@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import {
   ApiError,
@@ -6,6 +6,7 @@ import {
   createPlan,
   getIssue,
   getPlan,
+  isNotFound,
   isPlanFinished,
   type IssueSummary,
   listIssues,
@@ -14,7 +15,15 @@ import {
   wordingFor,
 } from './api.ts'
 import { POLL_INTERVAL_MS, Steps } from './InvestigationView.tsx'
+import { PageTitle } from './Page.tsx'
 import { PlanView } from './PlanView.tsx'
+import { PLAN_PATH, planPath } from './router.ts'
+
+/** What the plan screens need to know of an issue before the plan itself has been read. */
+interface ChosenIssue {
+  number: number
+  title: string | null
+}
 
 const SETUP_DOC = 'docs/github-app-setup.md'
 
@@ -53,19 +62,69 @@ function IssueError({ error, action }: { error: unknown; action: string }) {
 
 /**
  * Issue to plan, one screen at a time: the open issues of a repository, one issue as text,
- * then the plan run and its result. Nothing here survives a reload yet.
+ * then the plan run and its result. A plan has its own address (`planId` is the one the
+ * address names), so it is still there after a reload; the list and the issue screen are not
+ * addresses of their own.
  */
-export function IssuePlanner({ repositories, mayStart }: { repositories: Repository[]; mayStart: boolean }) {
+export function IssuePlanner({
+  repositories,
+  mayStart,
+  active = true,
+  planId: addressedPlanId = null,
+  onNavigate,
+}: {
+  repositories: Repository[]
+  mayStart: boolean
+  /** False while another page is showing and this one is only kept for its state. */
+  active?: boolean
+  planId?: string | null
+  onNavigate?: (path: string, options?: { focus?: boolean }) => void
+}) {
+  const queryClient = useQueryClient()
   const headingId = useId()
   const heading = useRef<HTMLHeadingElement>(null)
   const [repositoryId, setRepositoryId] = useState<string | null>(null)
-  const [issue, setIssue] = useState<IssueSummary | null>(null)
+  const [issue, setIssue] = useState<ChosenIssue | null>(null)
   const repository = repositories.find((candidate) => candidate.id === repositoryId) ?? repositories[0]
 
-  // Starting only queues the run; a worker makes the plan.
-  const start = useMutation({ mutationFn: createPlan })
-  const started = start.isPending || start.isSuccess
-  const screen = issue === null ? 'list' : started ? 'plan' : 'issue'
+  // Starting only queues the run; a worker makes the plan. The new plan gets its address at once.
+  const start = useMutation({
+    mutationFn: createPlan,
+    onSuccess: (created) => {
+      const address = planPath(created.planId)
+      if (address) {
+        queryClient.setQueryData(['plan', created.planId], created)
+        onNavigate?.(address, { focus: false })
+      }
+    },
+  })
+
+  // The plan on the screen is the one the address names, or else the one just started here.
+  const planId = addressedPlanId ?? start.data?.planId
+  const polled = useQuery({
+    queryKey: ['plan', planId],
+    queryFn: () => getPlan(planId!),
+    enabled: planId !== undefined,
+    initialData: () => (start.data?.planId === planId ? start.data : undefined),
+    staleTime: Infinity,
+    refetchInterval: (query) => (query.state.data && !isPlanFinished(query.state.data) ? POLL_INTERVAL_MS : false),
+  })
+
+  // Leaving a plan's address (Back, or another page) forgets the plan that was started here,
+  // so the screen never shows a plan its address does not name.
+  const shownPlanId = useRef(addressedPlanId)
+  const resetStart = start.reset
+  useEffect(() => {
+    if (shownPlanId.current !== null && addressedPlanId === null) {
+      resetStart()
+    }
+    shownPlanId.current = addressedPlanId
+  }, [addressedPlanId, resetStart])
+
+  const started = addressedPlanId !== null || start.isPending || start.isSuccess
+  const screen = started ? 'plan' : issue === null ? 'list' : 'issue'
+  const plan = start.isPending ? undefined : polled.data
+  const issueNumber = plan?.issue.number ?? issue?.number
 
   // The control that was just used is gone on the next screen: put the keyboard at its heading.
   const shown = useRef(screen)
@@ -80,14 +139,25 @@ export function IssuePlanner({ repositories, mayStart }: { repositories: Reposit
     return null
   }
 
-  const fullName = `${repository.owner}/${repository.name}`
+  // The repository of the plan on the screen; before the plan is read, the one chosen here.
+  const planRepository = plan ? repositories.find((candidate) => candidate.id === plan.repositoryId) : repository
+
+  function leavePlan(to: ChosenIssue | null) {
+    if (to !== null && plan) {
+      setRepositoryId(plan.repositoryId)
+    }
+    start.reset()
+    setIssue(to)
+    onNavigate?.(PLAN_PATH)
+  }
 
   return (
     <section className="planner" aria-labelledby={headingId}>
-      <h2 id={headingId} ref={heading} tabIndex={-1}>
+      {active && <PageTitle title={screen === 'plan' ? 'Plan' : 'Plan from an issue'} />}
+      <h2 id={headingId} ref={heading} data-page-heading tabIndex={-1}>
         {screen === 'list' && 'Open issues'}
         {screen === 'issue' && `Issue #${issue!.number}`}
-        {screen === 'plan' && `Plan for issue #${issue!.number}`}
+        {screen === 'plan' && (issueNumber === undefined ? 'Plan' : `Plan for issue #${issueNumber}`)}
       </h2>
 
       {screen === 'list' && (
@@ -97,7 +167,7 @@ export function IssuePlanner({ repositories, mayStart }: { repositories: Reposit
           onRepositoryChange={setRepositoryId}
           onSelect={(selected) => {
             start.reset()
-            setIssue(selected)
+            setIssue({ number: selected.number, title: selected.title })
           }}
         />
       )}
@@ -126,17 +196,19 @@ export function IssuePlanner({ repositories, mayStart }: { repositories: Reposit
         />
       )}
 
-      {screen === 'plan' && issue && (
+      {/* "No such plan" is the whole page's business: the app shows the not-found page instead of this one. */}
+      {screen === 'plan' && !(plan === undefined && isNotFound(polled.error)) && (
         <PlanRun
-          repositoryName={fullName}
-          issue={issue}
-          started={start.data}
+          repositoryName={planRepository ? `${planRepository.owner}/${planRepository.name}` : null}
+          issueTitle={plan?.issue.title ?? issue?.title ?? null}
+          plan={plan}
+          reading={plan === undefined && !start.isPending}
+          loadError={plan === undefined && polled.isError ? polled.error : null}
+          lostContact={plan !== undefined && polled.isError}
+          onRetry={() => void polled.refetch()}
           mayReview={mayStart}
-          onBackToIssue={() => start.reset()}
-          onBackToList={() => {
-            start.reset()
-            setIssue(null)
-          }}
+          onBackToIssue={() => leavePlan(plan ? plan.issue : issue)}
+          onBackToList={() => leavePlan(null)}
         />
       )}
     </section>
@@ -362,46 +434,66 @@ const finishedMessages: Record<Plan['state'], string> = {
 
 function PlanRun({
   repositoryName,
-  issue,
-  started,
+  issueTitle,
+  plan,
+  reading,
+  loadError,
+  lostContact,
+  onRetry,
   mayReview,
   onBackToIssue,
   onBackToList,
 }: {
-  repositoryName: string
-  issue: IssueSummary
-  started: Plan | undefined
+  repositoryName: string | null
+  issueTitle: string | null
+  /** Undefined until the plan has been started or read. */
+  plan: Plan | undefined
+  /** The plan the address names is being read for the first time. */
+  reading: boolean
+  /** The plan the address names could not be read at all (and the reason is not "no such plan"). */
+  loadError: Error | null
+  /** The plan was read before, and asking again failed. */
+  lostContact: boolean
+  onRetry: () => void
   mayReview: boolean
   onBackToIssue: () => void
   onBackToList: () => void
 }) {
-  const planId = started?.planId
-  const polled = useQuery({
-    queryKey: ['plan', planId],
-    queryFn: () => getPlan(planId!),
-    enabled: planId !== undefined,
-    initialData: started,
-    staleTime: Infinity,
-    refetchInterval: (query) => (query.state.data && !isPlanFinished(query.state.data) ? POLL_INTERVAL_MS : false),
-  })
   const cancel = useMutation({ mutationFn: cancelJob })
 
-  const plan = polled.data
+  if (loadError) {
+    return (
+      <>
+        <p role="alert">The plan could not be loaded. {loadError.message}</p>
+        <div className="actions">
+          <button type="button" className="secondary" onClick={onRetry}>
+            Try again
+          </button>
+          <button type="button" className="secondary" onClick={onBackToList}>
+            Back to issues
+          </button>
+        </div>
+      </>
+    )
+  }
+
   const working = plan === undefined || !isPlanFinished(plan)
 
   return (
     <>
-      <p className="asked">
-        {repositoryName} · {plan?.issue.title ?? issue.title}
-      </p>
+      {(repositoryName !== null || issueTitle !== null) && (
+        <p className="asked">{[repositoryName, issueTitle].filter((part) => part !== null).join(' · ')}</p>
+      )}
 
       {/* One live region for the whole run, so a screen reader hears each change of state. */}
       <p role="status" className={working ? undefined : 'done'}>
-        {plan === undefined || plan.state === 'queued'
-          ? 'Waiting for a worker…'
-          : plan.state === 'running'
-            ? 'Reading the issue and the code…'
-            : (wordingFor(finishedMessages, plan.state) ?? 'The run has ended.')}
+        {reading
+          ? 'Loading the plan…'
+          : plan === undefined || plan.state === 'queued'
+            ? 'Waiting for a worker…'
+            : plan.state === 'running'
+              ? 'Reading the issue and the code…'
+              : (wordingFor(finishedMessages, plan.state) ?? 'The run has ended.')}
       </p>
 
       {working && (
@@ -417,7 +509,7 @@ function PlanRun({
             </button>
           )}
           {cancel.isError && <p role="alert">The plan run could not be cancelled. {cancel.error.message}</p>}
-          {polled.isError && <p role="alert">Lost contact with the API. The run continues in the background.</p>}
+          {lostContact && <p role="alert">Lost contact with the API. The run continues in the background.</p>}
           {plan && <Steps investigationId={plan.investigationId} live />}
         </section>
       )}

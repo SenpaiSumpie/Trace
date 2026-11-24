@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
+using Trace.Application.Access;
+using Trace.Application.Investigations;
 using Trace.Domain;
 using Trace.Infrastructure.Persistence;
 using Trace.IntegrationTests.Support;
@@ -160,6 +163,120 @@ public class MigrationTests(PostgresFixture postgres)
 
         await migrator.MigrateAsync();
         Assert.Equal(12, await CountApplicationTablesAsync(db));
+    }
+
+    [Fact]
+    public async Task History_migration_keeps_existing_investigations_and_lists_only_the_ones_with_a_user()
+    {
+        var caller = new SettableCaller();
+        await using var database = await postgres.CreateDatabaseAsync(
+            migrate: false, services => services.AddScoped<ICurrentUser>(_ => caller));
+        await using var db = database.CreateContext();
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync("Plans");
+
+        // Rows as a database from before this migration holds them: one question a signed-in
+        // user asked, and one nobody is recorded for (asked anonymously on the demo repository).
+        var userId = Guid.NewGuid();
+        var repositoryId = Guid.NewGuid();
+        var snapshotId = Guid.NewGuid();
+        var chunkId = Guid.NewGuid();
+        var askedByUser = Guid.NewGuid();
+        var askedByNobody = Guid.NewGuid();
+        await db.Database.ExecuteSqlAsync($"""
+            INSERT INTO users (id, github_user_id, login, created_at, updated_at) VALUES ({userId}, 1, 'alice', now(), now());
+
+            INSERT INTO repositories (id, owner, name, default_branch, visibility, created_at, updated_at)
+            VALUES ({repositoryId}, 'trace-demo', 'sample-repo', 'main', 'public', now(), now());
+
+            INSERT INTO index_snapshots
+                (id, repository_id, commit_sha, branch, parser_version, embedding_model, status, created_at, updated_at)
+            VALUES
+                ({snapshotId}, {repositoryId}, {TestGraph.ShaA}, 'main', 'text-v1', 'fake-v1', 'building', now(), now());
+
+            INSERT INTO source_chunks
+                (id, snapshot_id, path, language, start_line, end_line, content_hash, text, embedding, created_at, updated_at)
+            VALUES
+                ({chunkId}, {snapshotId}, 'src/App.cs', 'csharp', 1, 1, repeat('0', 64), 'line one',
+                 array_fill(0, ARRAY[1024])::vector, now(), now());
+
+            UPDATE index_snapshots SET status = 'completed', completed_at = now() WHERE id = {snapshotId};
+
+            INSERT INTO investigations
+                (id, repository_id, snapshot_id, type, question, state, user_id, result_json, created_at, updated_at)
+            VALUES
+                ({askedByUser}, {repositoryId}, {snapshotId}, 'question', 'Asked by alice', 'completed', {userId},
+                 {"""{"schemaVersion":1,"outcome":"answered"}"""}::jsonb, now(), now()),
+                ({askedByNobody}, {repositoryId}, {snapshotId}, 'question', 'Asked by nobody', 'queued', NULL,
+                 NULL, now(), now());
+            """);
+
+        await migrator.MigrateAsync();
+
+        Assert.False(db.Database.HasPendingModelChanges());
+        Assert.Equal(12, await CountApplicationTablesAsync(db));
+
+        // Nothing that was there changed, and no row was given an owner it did not have.
+        var stored = await db.Investigations.AsNoTracking().OrderBy(i => i.Question).ToListAsync();
+        Assert.Equal(["Asked by alice", "Asked by nobody"], stored.Select(i => i.Question));
+        Assert.Equal([userId, null], stored.Select(i => i.UserId));
+        Assert.All(stored, investigation => Assert.Null(investigation.VisitorKey));
+        Assert.Equal(
+            ["ix_investigations_user_history", "ix_investigations_visitor_history"],
+            await HistoryIndexesAsync(db));
+
+        // The user's row is in that user's history, with its outcome read from the stored result.
+        // The row without an owner is in nobody's: not an anonymous caller's, not a visitor's.
+        caller.UserId = userId;
+        var listed = Assert.Single((await ListHistoryAsync(database)).Items);
+        Assert.Equal((askedByUser, "answered"), (listed.Id, listed.Outcome));
+
+        caller.UserId = null;
+        Assert.Empty((await ListHistoryAsync(database)).Items);
+        caller.VisitorKey = new string('0', 64);
+        Assert.Empty((await ListHistoryAsync(database)).Items);
+
+        // Deleting the user still clears the reference (the index that served it was replaced),
+        // and the row then belongs to nobody.
+        Assert.Equal(1, await db.Database.ExecuteSqlAsync($"DELETE FROM users WHERE id = {userId}"));
+        Assert.Null((await db.Investigations.AsNoTracking().SingleAsync(i => i.Id == askedByUser)).UserId);
+        caller.VisitorKey = null;
+        caller.UserId = userId;
+        Assert.Empty((await ListHistoryAsync(database)).Items);
+
+        // Stepping back removes only what this migration added and restores the index it replaced.
+        await migrator.MigrateAsync("Plans");
+
+        Assert.Equal(["ix_investigations_user_id"], await HistoryIndexesAsync(db));
+        Assert.Equal(0, await db.Database
+            .SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM information_schema.columns WHERE table_name = 'investigations' AND column_name = 'visitor_key'")
+            .SingleAsync());
+        Assert.Equal(2, await db.Database.SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM investigations").SingleAsync());
+
+        await migrator.MigrateAsync();
+        Assert.False(db.Database.HasPendingModelChanges());
+    }
+
+    private static async Task<InvestigationHistoryPage> ListHistoryAsync(TestDatabase database)
+    {
+        await using var scope = database.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IInvestigationHistoryStore>()
+            .ListAsync(new InvestigationHistoryQuery(null, null, 10, null));
+    }
+
+    private static Task<List<string>> HistoryIndexesAsync(TraceDbContext db) => db.Database
+        .SqlQuery<string>($"""
+            SELECT indexname::text AS "Value" FROM pg_indexes
+            WHERE tablename = 'investigations' AND (indexname LIKE '%history' OR indexname = 'ix_investigations_user_id')
+            ORDER BY indexname
+            """)
+        .ToListAsync();
+
+    private sealed class SettableCaller : ICurrentUser
+    {
+        public Guid? UserId { get; set; }
+
+        public string? VisitorKey { get; set; }
     }
 
     private static Task<int> CountApplicationTablesAsync(TraceDbContext db) => db.Database

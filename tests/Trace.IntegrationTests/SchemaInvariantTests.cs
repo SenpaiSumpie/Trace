@@ -232,6 +232,40 @@ public class SchemaInvariantTests(PostgresFixture postgres) : IAsyncLifetime
             "fk_investigations_index_snapshots_snapshot_id_repository_id");
     }
 
+    [Theory]
+    [InlineData("0123")]
+    [InlineData("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF")]
+    [InlineData("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg")]
+    public async Task Investigation_visitor_key_must_be_a_lowercase_hex_sha256(string visitorKey)
+    {
+        var (snapshot, _) = await TestGraph.AddCompletedSnapshotAsync(db, await TestGraph.AddRepositoryAsync(db));
+
+        await AssertRejectedAsync(
+            () => db.Database.ExecuteSqlAsync($"""
+                INSERT INTO investigations (id, repository_id, snapshot_id, type, question, state, visitor_key, created_at, updated_at)
+                VALUES ({Guid.NewGuid()}, {snapshot.RepositoryId}, {snapshot.Id}, 'question', 'q', 'queued', {visitorKey}, now(), now())
+                """),
+            CheckViolation,
+            "ck_investigations_visitor_key");
+    }
+
+    [Fact]
+    public async Task Investigation_cannot_belong_to_a_user_and_a_visitor_at_once()
+    {
+        var (snapshot, _) = await TestGraph.AddCompletedSnapshotAsync(db, await TestGraph.AddRepositoryAsync(db));
+        var user = User.Create(1, "alice");
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+
+        await AssertRejectedAsync(
+            () => db.Database.ExecuteSqlAsync($"""
+                INSERT INTO investigations (id, repository_id, snapshot_id, type, question, state, user_id, visitor_key, created_at, updated_at)
+                VALUES ({Guid.NewGuid()}, {snapshot.RepositoryId}, {snapshot.Id}, 'question', 'q', 'queued', {user.Id}, {Hash}, now(), now())
+                """),
+            CheckViolation,
+            "ck_investigations_one_owner");
+    }
+
     [Fact]
     public async Task Evidence_cannot_cite_a_chunk_from_another_snapshot()
     {

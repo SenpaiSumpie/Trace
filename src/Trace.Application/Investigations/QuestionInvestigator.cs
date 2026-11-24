@@ -89,7 +89,7 @@ public sealed class QuestionInvestigator(
         }
 
         var investigation = Investigation.Create(
-            snapshot, InvestigationType.Question, command.Question, command.IdempotencyKey, currentUser.UserId);
+            snapshot, InvestigationType.Question, command.Question, command.IdempotencyKey, currentUser.UserId, currentUser.VisitorKey);
         var job = Job.Enqueue(
             InvestigationJobHandler.JobKind,
             Job.RepositoryScope(investigation.RepositoryId),

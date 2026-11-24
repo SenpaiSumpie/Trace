@@ -19,6 +19,10 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 
     internal const string PlanInvestigationIndex = "ux_plans_investigation";
 
+    internal const string UserHistoryIndex = "ix_investigations_user_history";
+
+    internal const string VisitorHistoryIndex = "ix_investigations_visitor_history";
+
     private const string Sha256Hex = "'^[0-9a-f]{64}$'";
 
     /// <summary>
@@ -49,6 +53,18 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
 
     public DbSet<Job> Jobs => Set<Job>();
 
+    /// <summary>
+    /// One text member of a stored JSON document, read by the database
+    /// (<c>jsonb_extract_path_text</c>), so a query can report a stored outcome without loading
+    /// the document. Only usable inside a query.
+    /// </summary>
+    public static string? JsonText(string? json, string key) =>
+        throw new InvalidOperationException("Only for use in a database query.");
+
+    /// <summary>As <see cref="JsonText(string?, string)"/>, one level down.</summary>
+    public static string? JsonText(string? json, string key, string nestedKey) =>
+        throw new InvalidOperationException("Only for use in a database query.");
+
     internal static void Configure(DbContextOptionsBuilder builder, string connectionString) =>
         builder.UseNpgsql(connectionString, npgsql => npgsql.UseVector()).UseSnakeCaseNamingConvention();
 
@@ -69,6 +85,15 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasPostgresExtension("vector");
+
+        foreach (var parameters in new[] { new[] { typeof(string), typeof(string) }, [typeof(string), typeof(string), typeof(string)] })
+        {
+            var function = modelBuilder
+                .HasDbFunction(typeof(TraceDbContext).GetMethod(nameof(JsonText), parameters)!)
+                .HasName("jsonb_extract_path_text")
+                .IsBuiltIn();
+            function.HasParameter("json").HasStoreType("jsonb");
+        }
 
         modelBuilder.Entity<User>(user =>
         {
@@ -216,11 +241,18 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
                 "ck_investigations_type", EnumStorage.CheckSql<InvestigationType>("type"));
             table.HasCheckConstraint(
                 "ck_investigations_state", EnumStorage.CheckSql<InvestigationState>("state"));
+            table.HasCheckConstraint(
+                "ck_investigations_visitor_key", $"visitor_key ~ {Sha256Hex}");
+
+            // An investigation is listed for the user who asked or for the browser that asked, never both.
+            table.HasCheckConstraint(
+                "ck_investigations_one_owner", "user_id IS NULL OR visitor_key IS NULL");
         });
 
         investigation.Property(i => i.Question).HasMaxLength(Investigation.MaxQuestionLength);
         investigation.Property(i => i.ResultJson).HasColumnType("jsonb");
         investigation.HasOne<User>().WithMany().HasForeignKey(i => i.UserId).OnDelete(DeleteBehavior.SetNull);
+        investigation.Property(i => i.VisitorKey).HasMaxLength(Investigation.VisitorKeyLength).IsFixedLength();
         investigation.Property(i => i.IdempotencyKey).HasMaxLength(Investigation.MaxIdempotencyKeyLength);
         investigation.Property(i => i.ModelId).HasMaxLength(Investigation.MaxVersionLength);
         investigation.Property(i => i.PromptVersion).HasMaxLength(Investigation.MaxVersionLength);
@@ -231,6 +263,17 @@ public sealed class TraceDbContext(DbContextOptions<TraceDbContext> options, Tim
             .IsUnique()
             .HasFilter("idempotency_key IS NOT NULL")
             .HasDatabaseName(InvestigationIdempotencyIndex);
+
+        // Serve the history list: one owner's rows, newest first, with the ID as tie-break.
+        investigation.HasIndex(i => new { i.UserId, i.CreatedAt, i.Id })
+            .IsDescending(false, true, true)
+            .HasFilter("user_id IS NOT NULL")
+            .HasDatabaseName(UserHistoryIndex);
+        investigation.HasIndex(i => new { i.VisitorKey, i.CreatedAt, i.Id })
+            .IsDescending(false, true, true)
+            .HasFilter("visitor_key IS NOT NULL")
+            .HasDatabaseName(VisitorHistoryIndex);
+
         investigation.Property(i => i.Type).HasMaxLength(20).HasConversion(
             value => EnumStorage.ToStorage(value),
             stored => EnumStorage.FromStorage<InvestigationType>(stored));

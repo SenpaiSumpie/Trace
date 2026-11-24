@@ -12,7 +12,7 @@ is finished when every box under "Done when" is ticked, and not before.
 | M0 | Working slice | Done |
 | M1 | Measured answers | Next |
 | M2 | Issue to plan | Started (step 5 of 6) |
-| M3 | A product you can use daily | Not started |
+| M3 | A product you can use daily | Started (step 1 of 6) |
 | M4 | Safe to put online | Not started |
 | M5 | Live on Azure, with a demo | Not started; needs the Azure gate |
 
@@ -145,8 +145,8 @@ Done when:
       source lines under each sentence and downloads the export; component tests cover every
       state and hostile text, and browser tests run the whole flow by keyboard and at phone
       width. **Every plan shown so far came from the fake model on a fixture issue**, which is
-      what the box about a structured plan above is still open for. A plan cannot be found
-      again after a reload: that is M3)
+      what the box about a structured plan above is still open for. Since step M3.1 a plan
+      has its own address and is listed in the history)
 - [x] A plan can be marked as reviewed; this changes nothing in GitHub
       (`POST /api/v1/plans/{id}/review`: one timestamp, set once, for a plan that has steps.
       Tests compare every other stored row before and after and count the requests the GitHub
@@ -181,11 +181,17 @@ Done when:
 
 ## M3: A product you can use daily — size M
 
-Right now the page shows one question at a time and forgets it on reload.
+Until step M3.1 the page showed one question at a time and forgot it on reload.
 
 Done when:
 
-- [ ] Past investigations are listed, and each has its own address that can be reopened
+- [x] Past investigations are listed, and each has its own address that can be reopened
+      (step M3.1: `GET /api/v1/investigations` lists the caller's own investigations by
+      cursor, and the web app has `/history`, `/investigations/{id}` and `/plans/{id}`;
+      [ADR-020](adr/ADR-020-investigation-history.md), [ADR-021](adr/ADR-021-web-addresses.md).
+      "Listed" means listed for whoever asked: people with access to the same repository do
+      not see each other's, and investigations stored before this step without a user are in
+      nobody's list, though each still opens at its address)
 - [ ] Running index jobs and investigations are still shown after a reload
 - [ ] A repository page shows what is indexed: commit, date, file and passage counts, and
       what was skipped and why

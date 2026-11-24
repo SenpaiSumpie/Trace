@@ -19,7 +19,7 @@ internal static partial class V1Endpoints
     private static void MapPlanEndpoints(RouteGroupBuilder v1)
     {
         v1.MapPost("/repositories/{id:guid}/issues/{number:int:min(1)}/plans", CreatePlanAsync)
-            .RequireRateLimiting(WriteRateLimit).RequireSignIn();
+            .RequireRateLimiting(WriteRateLimit).RequireSignIn().RememberAnonymousVisitor();
         v1.MapGet("/plans/{id:guid}", GetPlanAsync).WithName(nameof(GetPlanAsync));
         v1.MapPost("/plans/{id:guid}/review", ReviewPlanAsync).RequireSignIn();
         v1.MapGet("/plans/{id:guid}/export", ExportPlanAsync);
