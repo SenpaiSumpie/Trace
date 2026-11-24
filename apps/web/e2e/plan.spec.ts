@@ -32,10 +32,10 @@ test('choose an issue, get a plan, read its evidence, mark it reviewed and downl
   await page.goto('/')
   await page.getByRole('button', { name: 'Plan from an issue' }).click()
 
-  // The six open fixture issues, newest first. The closed one and the pull request are not listed.
+  // The eight open fixture issues, newest first. The closed one and the pull request are not listed.
   await expect(page.getByRole('heading', { level: 2, name: 'Open issues' })).toBeVisible()
   const issues = page.locator('.issue-list > li')
-  await expect(issues).toHaveCount(6)
+  await expect(issues).toHaveCount(8)
   await expect(issues.first()).toContainText('#16 Allow a page size above 100 for exports')
   await expect(issues.first()).toContainText('Opened by robin-fixture · 1 comment')
   await expect(page.getByRole('button', { name: 'Load more issues' })).toHaveCount(0)

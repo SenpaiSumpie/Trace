@@ -76,6 +76,8 @@ public static partial class EvalCommand
           dotnet run --project tools/Trace.Evals -- report <result file> [--output <directory>]
           dotnet run --project tools/Trace.Evals -- compare <baseline result file> <candidate result file> [--output <directory>]
           dotnet run --project tools/Trace.Evals -- check <result file> --expectations <file>
+          dotnet run --project tools/Trace.Evals -- plan-run --labels <file> --issues <directory> --source <directory> [options]
+          dotnet run --project tools/Trace.Evals -- plan-report <plan result file> [--ratings <file>] [--output <directory>]
 
         run: asks every question of a dataset against one snapshot and writes one result file.
         Give either --source or --snapshot.
@@ -103,6 +105,23 @@ public static partial class EvalCommand
         check: exits 3 when the result file does not meet the expectations file (see docs/evaluation.md).
 
         None of the three needs the database or a provider.
+
+        plan-run: has the production pipeline plan every labeled issue against one snapshot and
+        writes one plan result file (see docs/evaluation.md, "Plan evaluation").
+
+          --labels <file>             Labeled issues.
+          --issues <directory>        The issues, one JSON file each. Never read from GitHub.
+          --source <directory>        The repository to index, as a local directory.
+          --output <directory>        Where the result file goes. Default: eval/results.
+          --split dev|test            Run only one split. Default: all labeled issues.
+          --issue <number>            Run only this issue; may be repeated. For a probe or for
+                                      the issues a stopped run did not reach.
+          --allow-revision-mismatch   Run even if the source is not the revision the labels name.
+          --keep-database             Do not drop the run's database afterwards.
+
+        plan-report: scores a plan result file against the rubric, and writes the report, the
+        rating sheet and an empty ratings file next to it. With --ratings it adds the part of the
+        score a person rated. Needs no database and no provider.
         """;
 
     public static EvalOptions ParseArguments(IReadOnlyList<string> args)
@@ -110,7 +129,7 @@ public static partial class EvalCommand
         ArgumentNullException.ThrowIfNull(args);
         if (args.Count == 0 || args[0] != "run")
         {
-            throw new EvalUsageException("Expected a command: 'run', 'report', 'compare' or 'check'.");
+            throw new EvalUsageException("Expected a command: 'run', 'report', 'compare', 'check', 'plan-run' or 'plan-report'.");
         }
 
         string? dataset = null;
@@ -211,6 +230,11 @@ public static partial class EvalCommand
         if (EvalCheckCommand.Handles(args))
         {
             return await EvalCheckCommand.RunAsync(args, output, error);
+        }
+
+        if (PlanEvalCommand.Handles(args))
+        {
+            return await PlanEvalCommand.RunAsync(args, output, error, configure, cancellationToken);
         }
 
         EvalOptions options;
@@ -403,7 +427,8 @@ public static partial class EvalCommand
         return result.Status == EvalRunStatus.Completed ? ExitOk : ExitCancelled;
     }
 
-    private static TimeSpan QuestionTimeout(IConfiguration configuration) =>
+    /// <summary>The longest one question, or one issue of a plan run, may take.</summary>
+    internal static TimeSpan QuestionTimeout(IConfiguration configuration) =>
         int.TryParse(configuration[QuestionTimeoutKey], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) && seconds > 0
             ? TimeSpan.FromSeconds(seconds)
             : throw new InvalidOperationException(

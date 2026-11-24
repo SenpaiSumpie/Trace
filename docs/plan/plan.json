@@ -280,8 +280,16 @@
         "The page works at phone width without horizontal scrolling (asserted in the browser test)",
         "Lint, web tests and build pass; all .NET checks pass; committed, pushed, CI green including the browser tests"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T23:58:10.108Z"
+      "status": "done",
+      "startedAt": "2026-11-23T23:58:10.108Z",
+      "finishedAt": "2026-11-24T00:22:00.701Z",
+      "evidence": "Commit 68b9251 \"feat(web): issue-to-plan flow in the web app\" pushed to main; CI run 45295981231 concluded success on attempt 1 (backend, web, e2e, eval-smoke, deployment-artifacts); the e2e job reported 8 passed including the four plan.spec.ts tests. Supervisor verification: `git log -1 --oneline` shows 68b9251; `git status --short` empty, main in sync with origin/main; `gh run view` shows headSha 68b9251d, success, all five jobs success; my search of non-test files under apps/web/src finds 0 uses of dangerouslySetInnerHTML or innerHTML assignment; package.json and the lock file are unchanged (no dependency added); nothing under src, tools or tests changed (no API change); App.test.tsx and e2e/ask.spec.ts unmodified; no Trace.Api or Trace.Worker process running and only trace-postgres-1 is up in Docker; `npm test` re-run: 4 files, 77 tests passed. Subagent evidence: (1) e2e/plan.spec.ts \"choose an issue, get a plan, read its evidence, mark it reviewed and download it\": six open issues, issue #5 as text, a plan with 3 steps, a citation opening real source lines, reviewed time shown, download observed via the browser download event with a fixed-pattern .md name. (2) Component tests in IssuePlanner.test.tsx and untrusted.test.tsx cover empty, loading, failed (16 codes), cancelled and insufficient evidence, and hostile text (script, img onerror, javascript: links, Markdown, entities, bidirectional controls, prototype names) rendered as literal text with no script, img, iframe, svg or a element created. (3) \"the whole plan flow works with the keyboard alone\" using Tab, Enter and Space with focus-visible asserted. (4) At 375x740, scrollWidth <= clientWidth asserted on six screens and on a screen with a 450-character path and a 600-character code line. (5) npm run lint clean, npm run build ok, Playwright 8 passed locally; dotnet build 0 warnings; tests unit 641, security 21, integration 372; dotnet format --verify-no-changes exit 0. One M2 box ticked (plans stored, shown in the web app, exportable). Nothing spent.",
+      "deferred": "No person has looked at the screens; they were checked by component tests, browser tests and three screenshots. Not verified: a real model's plan on these screens; screen readers and colour contrast; browsers other than Chromium; insufficient evidence, failed and cancelled plans and the \"Load more\" control in a real browser (component tests only, because the fixture cannot produce them). Deferred: a plan cannot be reached after a reload (M3.1, M3.2); bidirectional controls and look-alike characters are shown as written on the page while the export strips them; no Content-Security-Policy header (open questions 101 to 103). The local browser tests used the owner's development database: the Plans migration is now applied there and fake-model demo rows (plans, investigations, jobs, events, evidence for the demo repository only) were added and not counted; nothing was deleted. A fix outside the new flow: the question form was 381 px wide on a 375 px screen and is now constrained in index.css.",
+      "ownerActions": [
+        "Walk through the plan flow once: start the API and the web app (npm run dev in apps/web), choose \"Plan from an issue\" on the demo repository, and say what reads badly. No person has seen these screens.",
+        "Decide whether the dashed \"Not backed by evidence\" tag on unknowns and new-file reasons is clear enough; this is the open question from M2.3.",
+        "Decide, with M4, whether the page should strip or mark bidirectional control characters as the Markdown export does, and whether to add a Content-Security-Policy header."
+      ]
     },
     {
       "id": "M2.6",
@@ -295,7 +303,8 @@
         "Real-model runs and estimated spend are stated and within the limit; a missing key is recorded as an owner action instead",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-24T00:22:07.268Z"
     },
     {
       "id": "M3.1",

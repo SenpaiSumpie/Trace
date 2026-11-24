@@ -91,7 +91,7 @@ public sealed class IssueApiTests(PostgresFixture postgres) : IAsyncLifetime
         using var missing = await anonymous.GetAsync($"/api/v1/repositories/{demo.Id}/issues/999");
 
         Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
-        Assert.Equal([16, 14, 11, 8, 5, 3], list.Items.Select(i => i.Number));
+        Assert.Equal([16, 14, 11, 8, 6, 5, 3, 2], list.Items.Select(i => i.Number));
         Assert.Null(list.NextCursor);
         Assert.All(list.Items, item => Assert.Equal("open", item.State));
         Assert.DoesNotContain("\"body\"", listJson, StringComparison.Ordinal);
@@ -135,8 +135,8 @@ public sealed class IssueApiTests(PostgresFixture postgres) : IAsyncLifetime
         using var unknownRepository = await client.GetAsync($"/api/v1/repositories/{Guid.NewGuid()}/issues");
         using var unknownRepositoryIssue = await client.GetAsync($"/api/v1/repositories/{Guid.NewGuid()}/issues/3");
 
-        Assert.Equal([4, 2], pages.Select(p => p.Items.Count));
-        Assert.Equal([16, 14, 11, 8, 5, 3], pages.SelectMany(p => p.Items).Select(i => i.Number));
+        Assert.Equal([4, 4], pages.Select(p => p.Items.Count));
+        Assert.Equal([16, 14, 11, 8, 6, 5, 3, 2], pages.SelectMany(p => p.Items).Select(i => i.Number));
         Assert.All(new[] { zero, tooMany, notANumber }, response => Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode));
         await AssertProblemAsync(badCursor, HttpStatusCode.BadRequest, "invalid_cursor");
         await AssertProblemAsync(longCursor, HttpStatusCode.BadRequest, "invalid_cursor");

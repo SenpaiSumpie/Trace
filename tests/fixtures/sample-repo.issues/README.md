@@ -12,6 +12,12 @@ demo repository (`Demo:IssuesPath`) so listing and fetching issues works without
 - `0015.json` is marked `"pullRequest": true`: it stands for the pull requests GitHub lists
   among issues, which TRACE leaves out.
 - `0012.json` is closed: it is not listed, but it can be fetched by number.
+- `0002.json` and `0006.json` report defects in parts the fixture does not have (reminder
+  e-mails, a CSV export). They are there for plan evaluation: the right result for them is
+  that the repository does not show enough to plan.
+- Eight of the issues are labeled for plan evaluation in `../sample-repo.plan-labels.json`
+  (`docs/evaluation.md`, "Plan evaluation"). Changing the wording of a labeled issue changes
+  what is measured: change the label file's `labelsVersion` with it.
 
 Only `*.json` files are read. Fields: `number`, `title`, `state` (`open` or `closed`),
 `author`, `labels`, `createdAt`, `updatedAt`, `body`, `comments` (`id`, `author`, `createdAt`,

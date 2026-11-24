@@ -158,7 +158,7 @@ public partial class IssueRuleTests
 
         var page = await source.ListOpenAsync(100, cursor: null);
 
-        Assert.Equal([16, 14, 11, 8, 5, 3], page.Items.Select(issue => issue.Number));
+        Assert.Equal([16, 14, 11, 8, 6, 5, 3, 2], page.Items.Select(issue => issue.Number));
         Assert.Null(page.NextCursor);
         Assert.Equal("fixture", source.Kind);
     }
@@ -180,7 +180,7 @@ public partial class IssueRuleTests
         while (cursor is not null);
 
         Assert.Equal(2, pages);
-        Assert.Equal([16, 14, 11, 8, 5, 3], numbers);
+        Assert.Equal([16, 14, 11, 8, 6, 5, 3, 2], numbers);
     }
 
     [Fact]

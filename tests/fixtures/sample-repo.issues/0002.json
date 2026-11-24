@@ -1,0 +1,20 @@
+{
+  "number": 2,
+  "title": "Reminder e-mails for overdue tasks arrive twice",
+  "state": "open",
+  "author": "robin-fixture",
+  "labels": [
+    "bug"
+  ],
+  "createdAt": "2026-08-28T07:40:00Z",
+  "updatedAt": "2026-08-29T08:05:00Z",
+  "body": "Since last Tuesday every overdue task produces two reminder e-mails a few seconds apart instead of one. It started when the mail provider was switched.\n\nPlease make the reminder job send one e-mail per overdue task per day again.",
+  "comments": [
+    {
+      "id": 2001,
+      "author": "sam-fixture",
+      "createdAt": "2026-08-29T08:05:00Z",
+      "body": "Same here: two copies every morning, with identical subject lines."
+    }
+  ]
+}

@@ -84,3 +84,11 @@ The final step (M6.4) turns this into the owner checklist.
 - [ ] After M2.5, paste one Markdown export into a GitHub comment preview and decide whether monospaced model prose is acceptable, or whether the web app should render plans from the JSON and keep the export for copying.
 - [ ] Decide whether an insufficient-evidence result should be reviewable; today only a planned plan can be marked reviewed (docs/open-questions.md row 99).
 - [ ] Keep the GitHub App registered with read-only permissions only; that is what makes "nothing can write" true against real GitHub, where it has only been checked against a stub.
+
+### M2.5 Plan in the web app
+
+**Deferred:** No person has looked at the screens; they were checked by component tests, browser tests and three screenshots. Not verified: a real model's plan on these screens; screen readers and colour contrast; browsers other than Chromium; insufficient evidence, failed and cancelled plans and the "Load more" control in a real browser (component tests only, because the fixture cannot produce them). Deferred: a plan cannot be reached after a reload (M3.1, M3.2); bidirectional controls and look-alike characters are shown as written on the page while the export strips them; no Content-Security-Policy header (open questions 101 to 103). The local browser tests used the owner's development database: the Plans migration is now applied there and fake-model demo rows (plans, investigations, jobs, events, evidence for the demo repository only) were added and not counted; nothing was deleted. A fix outside the new flow: the question form was 381 px wide on a 375 px screen and is now constrained in index.css.
+
+- [ ] Walk through the plan flow once: start the API and the web app (npm run dev in apps/web), choose "Plan from an issue" on the demo repository, and say what reads badly. No person has seen these screens.
+- [ ] Decide whether the dashed "Not backed by evidence" tag on unknowns and new-file reasons is clear enough; this is the open question from M2.3.
+- [ ] Decide, with M4, whether the page should strip or mark bidirectional control characters as the Markdown export does, and whether to add a Content-Security-Policy header.

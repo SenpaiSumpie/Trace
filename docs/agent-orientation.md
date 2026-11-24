@@ -21,13 +21,17 @@ list): `docs/open-questions.md`.
   Testcontainers; Docker must be running), `tests/Trace.SecurityTests`
 - `tests/fixtures/sample-repo` — the synthetic repository used for tests and evaluation;
   `tests/fixtures/sample-repo.questions.json` — its labeled questions;
-  `tests/fixtures/sample-repo.issues/` — its invented issues, served for the demo repository.
+  `tests/fixtures/sample-repo.issues/` — its invented issues, served for the demo repository;
+  `tests/fixtures/sample-repo.plan-labels.json` — the labels of eight of them for plan
+  evaluation.
   They sit next to the fixture, not inside it: everything inside is indexed and changes the
   revision the evaluation baseline is pinned to
 - `tools/Trace.Evals` — the evaluation tool (`docs/evaluation.md`): `run` asks a dataset's
   questions, `report` computes the metrics of a result file, `compare` diffs two, `check` fails
   when a result file does not meet an expectations file (CI runs it on the smoke subset
-  `tests/fixtures/sample-repo.smoke.json`). A command-line tool, not a host. Result files go
+  `tests/fixtures/sample-repo.smoke.json`). `plan-run` has the production pipeline plan the
+  labeled issues and `plan-report` scores the result against the plan rubric, part computed
+  and part rated by a person (ADR-019). A command-line tool, not a host. Result files go
   to the git-ignored `eval/results/`. `run --snapshot <id>` evaluates a snapshot the
   application already indexed, from a copy; everything about a private repository (dataset,
   results, reports) lives under the git-ignored `eval/local/` and nowhere else
@@ -130,4 +134,7 @@ and in tests) unless the step says to use the real ones. When it does:
 - Labeled evaluation questions are written before looking at retrieval results, and tuning
   is done on the development split only, never the held-out one.
 - A web test that mocks polling must return every step the UI waits for.
+- Issue labels and the plan rubric are written before a real model plans anything, and a
+  rating is never changed because of the score it produces. The mechanical part of the rubric
+  reads high on its own (the fake model gets about 66%): never quote it as quality.
 - GitHub reports a refused sign-in as HTTP 200 with an `error` field.

@@ -358,7 +358,8 @@ public sealed class EvalRunner(
             (long)duration.TotalMilliseconds);
     }
 
-    private static EvalToolCall? ToolCall(InvestigationEvent investigationEvent)
+    /// <summary>A recorded step as a tool call of a result file; null for a step that is not a tool request.</summary>
+    internal static EvalToolCall? ToolCall(InvestigationEvent investigationEvent)
     {
         var status = investigationEvent.EventType switch
         {

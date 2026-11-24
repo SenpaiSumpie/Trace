@@ -1,0 +1,20 @@
+{
+  "number": 6,
+  "title": "Nightly CSV export writes due dates in the wrong time zone",
+  "state": "open",
+  "author": "sam-fixture",
+  "labels": [
+    "bug"
+  ],
+  "createdAt": "2026-09-12T06:20:00Z",
+  "updatedAt": "2026-09-12T13:45:00Z",
+  "body": "The nightly CSV export writes each task's due date in UTC. Our board is set to Europe/Vienna, so a task due late in the evening shows up under the following day in the spreadsheet.\n\nThe due date column should use the board's configured time zone.",
+  "comments": [
+    {
+      "id": 6001,
+      "author": "lee-fixture",
+      "createdAt": "2026-09-12T13:45:00Z",
+      "body": "The exporter's date formatting was touched in the last release; that may be where it broke."
+    }
+  ]
+}
