@@ -50,7 +50,11 @@ public sealed record PlanEvalRunResult(
     PlanEvalTotals Totals,
     IReadOnlyList<PlanEvalIssueResult> Issues)
 {
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>2 added each issue's <c>failure</c> (the pipeline's fixed sentence about why a run failed).</summary>
+    public const int CurrentSchemaVersion = 2;
+
+    /// <summary>The oldest format <see cref="Load"/> still reads. A version 1 file has no <c>failure</c>.</summary>
+    public const int OldestReadableSchemaVersion = 1;
     public const string PlanKind = "plan";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -112,9 +116,10 @@ public sealed record PlanEvalRunResult(
             throw new EvalResultFileException($"its \"kind\" is not \"{PlanKind}\": it is not the result of a plan run.");
         }
 
-        if (result.SchemaVersion != CurrentSchemaVersion)
+        if (result.SchemaVersion is < OldestReadableSchemaVersion or > CurrentSchemaVersion)
         {
-            throw new EvalResultFileException($"its schemaVersion is {result.SchemaVersion}; this tool reads version {CurrentSchemaVersion}.");
+            throw new EvalResultFileException(
+                $"its schemaVersion is {result.SchemaVersion}; this tool reads versions {OldestReadableSchemaVersion} to {CurrentSchemaVersion}.");
         }
 
         if (string.IsNullOrWhiteSpace(result.RunId) || result.Labels is null || result.Snapshot is null || result.Chat is null || result.Issues is null)
@@ -232,6 +237,11 @@ public sealed record PlanEvalTotals(
 /// <param name="Label">The issue's label, copied from the label file.</param>
 /// <param name="Outcome">One of <see cref="PlanEvalOutcomes"/>.</param>
 /// <param name="ErrorCode">The pipeline's reason for a failure; null otherwise.</param>
+/// <param name="Failure">
+/// The sentence the pipeline recorded when the run failed: fixed text written by the server,
+/// which says more than the code (which of the ways a model's output can be unusable, for
+/// example). Null when the run did not fail, and in a version 1 file.
+/// </param>
 /// <param name="IssueContentHash">The hash the pipeline recorded of the issue text it showed the model; null if the issue was never read.</param>
 /// <param name="Plan">The stored <c>plan-v1</c> document, exactly as the pipeline stored it; null unless the run completed.</param>
 /// <param name="Trimmed">What validation removed from the model's proposal, as the pipeline recorded it; null unless the run completed.</param>
@@ -242,6 +252,7 @@ public sealed record PlanEvalIssueResult(
     PlanIssueLabel Label,
     string Outcome,
     string? ErrorCode,
+    string? Failure,
     Guid? InvestigationId,
     Guid? PlanId,
     string? IssueContentHash,

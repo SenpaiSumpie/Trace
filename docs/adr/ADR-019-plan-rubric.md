@@ -58,8 +58,8 @@ How the commands, the label file and the scores work is in
   `PlanInvestigator` with its validation. The tool supplies the issue source, because the
   application reads issue files for the demo repository only and a run's repository is not
   that one; the files go through the same reader, limits and cleaning.
-- **A plan run has its own result file** (`kind` `plan`, `schemaVersion` 1) and its own two
-  commands, `plan-run` and `plan-report`. The question commands and their file format are
+- **A plan run has its own result file** (`kind` `plan`) and its own two commands, `plan-run`
+  and `plan-report`. The question commands and their file format are
   unchanged, and each side refuses the other's file.
 - **CI does not run plans.** The eval-smoke job is unchanged
   ([ADR-012](ADR-012-evaluation-smoke-check.md)). The plan runner is covered by integration
@@ -87,6 +87,11 @@ How the commands, the label file and the scores work is in
   only the dimension's number.
 - Expected-abstention issues weigh as much as planned ones. With two of eight they move the
   headline by 12.5 points each.
+- **A failed run is a zero whose reason has to be recorded.** The first baseline lost 25
+  points to two runs that failed as `invalid_model_output`, and its result file did not say
+  which kind of unusable output it was. Since then a plan result file carries the pipeline's
+  fixed failure sentence (`failure`, format version 2). The model's reply itself is still
+  never stored, so the sentence is all there is to go on.
 - There is no command that merges two plan result files. A run that stops partway is
   continued with `--issue` for the issues it did not reach and reported from both files by
   hand.

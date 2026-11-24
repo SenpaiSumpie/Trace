@@ -62,7 +62,7 @@ public partial class PlanEvalRunnerTests(PostgresFixture postgres)
         Assert.Contains($"Result file: {file}", output.ToString(), StringComparison.Ordinal);
 
         var result = PlanEvalRunResult.Load(file);
-        Assert.Equal((PlanEvalRunResult.PlanKind, 1, EvalRunStatus.Completed), (result.Kind, result.SchemaVersion, result.Status));
+        Assert.Equal((PlanEvalRunResult.PlanKind, 2, EvalRunStatus.Completed), (result.Kind, result.SchemaVersion, result.Status));
         Assert.Matches("^[0-9a-f]{40}$", result.TraceCommit);
         Assert.Equal(new PlanEvalLabelsInfo("sample-repo", "1", result.Snapshot.CommitSha, RevisionMatchesSnapshot: true, "all", 8), result.Labels);
         Assert.Equal((LineChunker.Version, "deterministic-fake"), (result.Snapshot.ChunkerVersion, result.Snapshot.EmbeddingProvider));
@@ -338,6 +338,10 @@ public partial class PlanEvalRunnerTests(PostgresFixture postgres)
         Assert.Equal((1, 1), (unverified.Trimmed!.Citations, unverified.Trimmed.Steps));
         Assert.Contains(PlanAssembler.ModelReportedInsufficient, result.Issues[4].Limitations);
         Assert.Equal(["The repository has no reminder job."], result.Issues[4].StoredPlan()!.Unknowns.Select(unknown => unknown.Text));
+        // A failure carries the pipeline's own fixed sentence, which says which kind of unusable output it was.
+        Assert.Equal("Failed: The model's plan was not valid JSON of the required shape.", result.Issues[1].Failure);
+        Assert.StartsWith("Failed: ", result.Issues[5].Failure, StringComparison.Ordinal);
+        Assert.All(result.Issues.Where(issue => issue.Outcome != PlanEvalOutcomes.Failed), issue => Assert.Null(issue.Failure));
         Assert.All(new[] { result.Issues[1], result.Issues[5] }, failed =>
         {
             Assert.Null(failed.StoredPlan());

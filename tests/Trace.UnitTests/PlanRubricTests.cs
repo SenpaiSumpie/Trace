@@ -415,7 +415,7 @@ public class PlanRubricTests
              "issuesNeedingRatings", "dimensions", "removedItems", "proposedItems", "discardedCitations", "citedLocations", "tokens", "estimatedCostUsd"],
             document.RootElement.GetProperty("scopes")[0].EnumerateObject().Select(property => property.Name));
         Assert.Equal(
-            ["number", "split", "expectedOutcome", "outcome", "errorCode", "scoring", "outcomeAsExpected", "counts", "trimmed", "files", "checks", "ratings",
+            ["number", "split", "expectedOutcome", "outcome", "errorCode", "failure", "scoring", "outcomeAsExpected", "counts", "trimmed", "files", "checks", "ratings",
              "dimensions", "uncitedShare", "forbiddenTextElsewhere", "mechanical", "withRatings", "needsRatings", "toolCalls", "tokens", "estimatedCostUsd", "durationMs"],
             document.RootElement.GetProperty("issues")[0].EnumerateObject().Select(property => property.Name));
 
@@ -482,14 +482,22 @@ public class PlanRubricTests
                 ["schemaVersion", "kind", "runId", "status", "traceCommit", "traceCommitDirty", "labels", "snapshot", "chat", "prices", "startedAt", "endedAt", "totals", "issues"],
                 document.RootElement.EnumerateObject().Select(property => property.Name));
             Assert.Equal(
-                ["number", "split", "label", "outcome", "errorCode", "investigationId", "planId", "issueContentHash", "plan", "trimmed", "limitations", "toolCalls", "tokens", "estimatedCostUsd", "durationMs"],
+                ["number", "split", "label", "outcome", "errorCode", "failure", "investigationId", "planId", "issueContentHash", "plan", "trimmed", "limitations", "toolCalls", "tokens", "estimatedCostUsd", "durationMs"],
                 document.RootElement.GetProperty("issues")[0].EnumerateObject().Select(property => property.Name));
             Assert.Equal("plan-v1", document.RootElement.GetProperty("issues")[0].GetProperty("plan").GetProperty("schemaVersion").GetString());
         }
 
         string Refused(string text) => Assert.Throws<EvalResultFileException>(() => PlanEvalRunResult.Parse(text)).Message;
         Assert.Contains("not the result of a plan run", Refused(json.Replace("\"kind\": \"plan\"", "\"kind\": \"question\"", StringComparison.Ordinal)), StringComparison.Ordinal);
-        Assert.Contains("schemaVersion is 2", Refused(json.Replace("\"schemaVersion\": 1,", "\"schemaVersion\": 2,", StringComparison.Ordinal)), StringComparison.Ordinal);
+        Assert.Contains("schemaVersion is 3", Refused(json.Replace("\"schemaVersion\": 2,", "\"schemaVersion\": 3,", StringComparison.Ordinal)), StringComparison.Ordinal);
+
+        // A version 1 file, written before a failure's sentence was recorded, is still read.
+        var versionOne = PlanEvalRunResult.Parse(json
+            .Replace("\"schemaVersion\": 2,", "\"schemaVersion\": 1,", StringComparison.Ordinal)
+            .Replace("\"failure\": \"Failed: zzfailure model_error.\",", string.Empty, StringComparison.Ordinal));
+        Assert.Equal((1, null), (versionOne.SchemaVersion, versionOne.Issues[2].Failure));
+        Assert.Equal(0, PlanRubric.Score(versionOne.Issues[2], rating: null).Mechanical);
+        Assert.Equal("Failed: zzfailure model_error.", read.Issues[2].Failure);
         Assert.Contains("unknown \"outcome\"", Refused(json.Replace("\"outcome\": \"failed\"", "\"outcome\": \"exploded\"", StringComparison.Ordinal)), StringComparison.Ordinal);
         Assert.Contains("stored plan of a completed run", Refused(json.Replace("\"outcome\": \"failed\"", "\"outcome\": \"planned\"", StringComparison.Ordinal)), StringComparison.Ordinal);
         Assert.Contains("issue #3", Refused(json.Replace("\"schemaVersion\": \"plan-v1\"", "\"schemaVersion\": \"plan-v0\"", StringComparison.Ordinal)), StringComparison.Ordinal);
@@ -540,6 +548,7 @@ public class PlanRubricTests
             label,
             outcome ?? (plan!.Outcome == PlanOutcome.Planned ? PlanEvalOutcomes.Planned : PlanEvalOutcomes.InsufficientEvidence),
             errorCode,
+            Failure: errorCode is null ? null : $"Failed: zzfailure {errorCode}.",
             InvestigationId: plan is null ? null : Guid.NewGuid(),
             PlanId: plan is null ? null : Guid.NewGuid(),
             IssueContentHash: new string('a', 64),

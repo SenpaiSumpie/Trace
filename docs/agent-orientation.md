@@ -137,4 +137,8 @@ and in tests) unless the step says to use the real ones. When it does:
 - Issue labels and the plan rubric are written before a real model plans anything, and a
   rating is never changed because of the score it produces. The mechanical part of the rubric
   reads high on its own (the fake model gets about 66%): never quote it as quality.
+- A failed run is a zero in the plan rubric, and the error code alone does not say why. The
+  first plan baseline lost 25 points to two `invalid_model_output` runs that could not be
+  explained afterwards; a plan result file now keeps the pipeline's fixed failure sentence.
+  The model's reply itself is never stored.
 - GitHub reports a refused sign-in as HTTP 200 with an `error` field.

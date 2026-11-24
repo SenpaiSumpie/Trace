@@ -61,10 +61,11 @@ line range. The full specification is in
   must exist in the snapshot unless it is marked new; a proposal with no valid citation is
   stored as insufficient evidence, not as a plan; what was removed is counted and listed in
   the investigation's events ([ADR-017](docs/adr/ADR-017-issue-to-plan-validation.md)).
-  **Plan generation has only run with the deterministic fake model and scripted test models,
-  on the fixture and invented issues: no real model has been asked for a plan and no real
-  GitHub issue has been read by a run.** The fake's plan is a list of passages matching the
-  issue's title.
+  **A real model has made plans only in one evaluation run, on the fixture and its invented
+  issues (2026-11-24): five good plans, one correct refusal, and two of eight runs that
+  failed because the model's reply could not be used. No real GitHub issue has been read by a
+  run, and the application itself has only ever run with the fake model**, whose plan is a
+  list of passages matching the issue's title.
 - Plans over HTTP ([ADR-018](docs/adr/ADR-018-plan-api-and-markdown-export.md)):
   `POST /api/v1/repositories/{id}/issues/{number}/plans` queues a plan (202, then poll;
   idempotency key and rate limit as for a question), `GET /api/v1/plans/{id}` returns its
@@ -135,11 +136,25 @@ line range. The full specification is in
   repository has a draft set of 19 questions and one real-model baseline (2026-11-23); both
   are kept out of this repository, and **the labels are drafts its owner has not reviewed
   yet**.
+- Plan evaluation ([ADR-019](docs/adr/ADR-019-plan-rubric.md)): eight of the fixture's issues
+  are labeled (four development, four held-out; two of them cannot be planned from the
+  repository, one is a prompt-injection attempt) with the files a correct plan must touch,
+  what it must say, the risks it must mention and what its verification must cover.
+  `plan-run` has the production pipeline plan them and `plan-report` scores the result on
+  four dimensions (completeness, correct files, safety, verification), each with a part that
+  is computed and a part a person rates from a checklist; no keyword matching and no judge
+  model stand in for the person. One baseline with the real models exists
+  ([docs/eval/2026-11-24-fixture-plan-baseline.md](docs/eval/2026-11-24-fixture-plan-baseline.md)):
+  **73.2% against the handoff's 80% target (74.7% on the computed part alone). The target is
+  missed because two of the eight runs failed with `invalid_model_output`, for a reason that
+  is not yet known; the six that completed score 97.6%. The rated part was rated by the agent
+  that built the evaluation, not by the owner or an independent reviewer.**
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: plan generation with a real model (it has only ever run with the fake and
-scripted models), a list of past plans or a way back to one after a reload, a telemetry backend with dashboards or alerts, a deployment
+Not implemented: a cure or even a diagnosis for the plan runs that fail on a real model's
+reply (2 of 13 so far), plans from real GitHub issues, a list of past plans or a way back to
+one after a reload, a telemetry backend with dashboards or alerts, a deployment
 pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).
@@ -267,6 +282,23 @@ limits are in
 [docs/eval/2026-11-23-fixture-baseline.md](docs/eval/2026-11-23-fixture-baseline.md);
 [docs/evaluation.md](docs/evaluation.md#running-with-the-real-models) says how to run it
 again, which costs money.
+
+Plans are measured with two more commands:
+
+```sh
+dotnet run --project tools/Trace.Evals -- plan-run --labels tests/fixtures/sample-repo.plan-labels.json --issues tests/fixtures/sample-repo.issues --source tests/fixtures/sample-repo
+dotnet run --project tools/Trace.Evals -- plan-report eval/results/<plan result file>.json [--ratings <ratings file>]
+```
+
+`plan-run` plans the fixture's eight labeled issues through the production pipeline (with the
+fake model by default, which costs nothing). `plan-report` prints the rubric score twice:
+from the computed checks alone, and with a person's ratings once a ratings file is given;
+without one it says "needs a human" rather than guessing. It also writes a rating sheet and
+an empty ratings file next to the result. With the real models (one run, 2026-11-24): 73.2%
+with the agent's own ratings against a target of 80%, two of eight runs failed, an estimated
+$0.76 for the eight plans. The record, its limits and the ratings are in
+[docs/eval/2026-11-24-fixture-plan-baseline.md](docs/eval/2026-11-24-fixture-plan-baseline.md);
+the rubric is in [docs/evaluation.md](docs/evaluation.md#plan-evaluation).
 
 To measure a repository of your own that the application has indexed, without committing
 anything about it:

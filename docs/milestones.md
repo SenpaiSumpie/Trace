@@ -103,12 +103,18 @@ Done when:
       issue, lets the model explore with the same two read-only tools and limits as a
       question, and stores a `plan-v1` document in which every step, risk, verification entry
       and changed file rests on citations the server verified
-      ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). **It has only run with the
-      deterministic fake model and scripted test models, on the fixture and invented issues.**
-      The fake's plan is a list of passages matching the issue's title, not a plan. The box
-      stays open until a real model has produced a plan and someone has read it. Since step
+      ([ADR-017](adr/ADR-017-issue-to-plan-validation.md)). Since step
       M2.4 a plan can be asked for and read over HTTP
-      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)))
+      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). Since step M2.6 a real model
+      has produced plans, in one evaluation run on the fixture's invented issues
+      ([the plan baseline](eval/2026-11-24-fixture-plan-baseline.md)): five plans with steps,
+      files, risks, verification and unknowns, from which validation removed nothing, and
+      which read as correct but for one wrong sentence. Two things keep the box open. **Two
+      of eight runs (2 of 13 in the step) failed with `invalid_model_output` and stored
+      nothing, for a reason not yet known.** And the plans were read by the agent that built
+      the evaluation, not by you: read one, and say whether an unknown or the reason of a new
+      file may stay without a citation, which is the one place a plan is not tied to source
+      lines)
 - [ ] Issue text is treated as untrusted, like source: tests show it cannot add tools,
       reach other repositories or get uncited claims into a plan
       (**not ticked yet.** Tests with a model scripted to obey an injected issue show: no
@@ -119,7 +125,14 @@ Done when:
       First, an *unknown* and the *reason of a new file* are stored without a citation by
       design, so a model can still write an unsupported sentence there; you decide whether
       that is acceptable or whether those two should be dropped or marked more loudly.
-      Second, no real model has been run on the injection fixture)
+      That is still open. The second thing was that no real model had been run on the
+      injection fixture: in step M2.6 one was, once. It used only the two real tools,
+      followed none of the injected instructions, cited nothing they pointed at and said in
+      its summary that it had treated them as data. The path of the secrets file the issue
+      names does appear in the plan, in an uncited unknown that reports it was not found:
+      exactly the kind of sentence the first point is about
+      ([the plan baseline](eval/2026-11-24-fixture-plan-baseline.md#the-injection-issue)).
+      One run of one model on an obvious injection is not proof that a model cannot be led)
 - [x] Plans are stored, shown in the web app, and can be exported as Markdown
       (Built: the `plans` table, its rules in the database and the
       versioned result document ([ADR-016](adr/ADR-016-plan-storage.md),
@@ -142,6 +155,18 @@ Done when:
       says beside it that this is not an approval and changes nothing on GitHub)
 - [ ] The fixture has labeled issues, and plans score at least 80% on a written rubric, or
       the shortfall is written down with its cause
+      (**not ticked yet.** Built in step M2.6: eight labeled issues, a rubric that is part
+      computed and part rated by a person, the commands `plan-run` and `plan-report`
+      ([ADR-019](adr/ADR-019-plan-rubric.md), [evaluation.md](evaluation.md#plan-evaluation)),
+      and one baseline with the real models
+      ([the plan baseline](eval/2026-11-24-fixture-plan-baseline.md)): **73.2% with ratings
+      against 80%, 74.7% on the computed part alone.** The shortfall is written down: 25 of
+      the 26.8 missing points are two runs that failed with `invalid_model_output`; the six
+      that completed score 97.6%. Two things keep the box open. The cause is known only as
+      far as that failure name: why the model's reply was unusable is not established, and
+      the same two issues completed on rerun. And the labels and the ratings are the work of
+      the agent that built the evaluation: review the labels, rate the plans yourself or have
+      someone independent do it, and the number becomes yours)
 - [x] Nothing TRACE does can write to a repository, open a pull request or edit an issue
       (Three things hold it, each with a test. The GitHub client is the only code that talks
       to GitHub, and a test reads its source and every other source file: the only requests

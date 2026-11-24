@@ -191,7 +191,7 @@ test('the whole plan flow works with the keyboard alone', async ({ page }) => {
   await tabTo(page, page.getByRole('button', { name: 'Back to issues' }))
   await page.keyboard.press('Enter')
   await expect(page.getByRole('heading', { level: 2, name: 'Open issues' })).toBeFocused()
-  await expect(page.locator('.issue-list > li')).toHaveCount(6)
+  await expect(page.locator('.issue-list > li')).toHaveCount(8)
 })
 
 test.describe('at phone width', () => {
@@ -203,7 +203,7 @@ test.describe('at phone width', () => {
     await expectNoSidewaysScroll(page)
 
     await page.getByRole('button', { name: 'Plan from an issue' }).click()
-    await expect(page.locator('.issue-list > li')).toHaveCount(6)
+    await expect(page.locator('.issue-list > li')).toHaveCount(8)
     await expectNoSidewaysScroll(page)
 
     // The prompt-injection fixture issue: a long body full of instructions, shown as text.

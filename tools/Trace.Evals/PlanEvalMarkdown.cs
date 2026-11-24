@@ -106,6 +106,12 @@ public static class PlanEvalMarkdown
                 + $"| {(issue.DurationMs / 1000.0).ToString("0.0", Invariant)} s |");
         }
 
+        foreach (var issue in report.Issues.Where(issue => issue.Failure is not null))
+        {
+            text.AppendLine();
+            text.AppendLine(Invariant, $"#{issue.Number} failed. What the pipeline recorded: {EvalMarkdown.Code(issue.Failure)}");
+        }
+
         text.AppendLine();
         text.AppendLine("### Dimensions per issue");
         text.AppendLine();

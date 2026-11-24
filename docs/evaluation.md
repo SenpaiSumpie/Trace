@@ -703,8 +703,10 @@ How issue-to-plan is measured: a file of labeled issues, a runner that has the p
 pipeline plan each of them, a rubric that is partly computed and partly rated by a person, and
 one result file per run ([ADR-019](adr/ADR-019-plan-rubric.md)).
 
-**Status:** the fixture's labeled issues have only been run with the fake providers, which
-shows that plans can be run and scored and nothing else.
+**Status:** the fixture's eight labeled issues were run once with the real providers on
+2026-11-24; that run is [the plan baseline](#the-plan-baseline). The rated part of its score
+comes from the agent that built the evaluation, not from the owner or an independent reviewer.
+Everything else, the tests included, uses the fake or scripted models. CI does not run plans.
 
 | Command | What it does | Needs |
 |---|---|---|
@@ -927,8 +929,9 @@ the score it produces.
 
 ### The plan result file
 
-One JSON file per run, `"kind": "plan"`, `schemaVersion` 1, named
-`<label set>-plans-<UTC time>-<run id>.json`. It quotes the evaluated source (excerpts) and
+One JSON file per run, `"kind": "plan"`, `schemaVersion` 2, named
+`<label set>-plans-<UTC time>-<run id>.json`. Version 2 added each issue's `failure`;
+`plan-report` still reads version 1 files, which have none. It quotes the evaluated source (excerpts) and
 holds the plans, so it is written to a git-ignored directory. `report`, `compare` and `check`
 refuse it, and `plan-report` refuses a question run's file.
 
@@ -946,6 +949,7 @@ Per issue:
 | `number`, `split`, `label` | Copied from the label file, so the file can be scored on its own. |
 | `outcome` | `planned`, `insufficient_evidence`, `failed`, `cancelled` or `not_run`. |
 | `errorCode` | Why a `failed` issue failed, as the pipeline recorded it: the codes of a question, or one of the issue-reading codes (`issue_not_found`, ...). |
+| `failure` | The sentence the pipeline recorded with a failure. It is fixed text written by the server, never the model's words, and says more than the code: which of the ways a model's reply can be unusable, for example. `null` unless the issue failed. It is also printed in the report. |
 | `investigationId`, `planId` | The rows in the run's database; `null` if never created. |
 | `issueContentHash` | The hash the pipeline recorded of the issue text it showed the model. |
 | `plan` | The stored `plan-v1` document ([plan-result-schema.md](plan-result-schema.md)), exactly as the pipeline stored it; `null` unless the run completed. |
@@ -955,6 +959,39 @@ Per issue:
 
 Tests assert the fields of the result file and of the report (`PlanRubricTests`), and of a
 file written by a real run of the pipeline (`PlanEvalRunnerTests`).
+
+### The plan baseline
+
+One run with the real models (2026-11-24, labels version 1, `claude-opus-5-5` and
+`voyage-code-3`, plan prompt `plan-prompt-v1`, TRACE commit `05d0d77`). The full record, with
+every issue, the tokens, the cost, a reading of each plan and what limits the result, is
+[eval/2026-11-24-fixture-plan-baseline.md](eval/2026-11-24-fixture-plan-baseline.md); the
+ratings are in the file next to it.
+
+| | All (8) | `dev` (4) | `test` (4) |
+|---|---|---|---|
+| Planned / insufficient evidence / failed | 5 / 1 / 2 | 3 / 1 / 0 | 2 / 0 / 2 |
+| Outcome as labeled | 6 of 8 | 4 of 4 | 2 of 4 |
+| Rubric score, mechanical part only | 74.7% | 100.0% | 49.5% |
+| Rubric score, with agent ratings | 73.2% | 100.0% | 46.4% |
+| Entries removed by validation | 0 of 66 | 0 of 35 | 0 of 31 |
+| Estimated cost | $0.7568 | $0.3559 | $0.4009 |
+
+**The 80% target is missed.** 25 of the 26.8 missing points are two held-out runs (#11 and
+#6) that failed with `invalid_model_output` and so stored nothing; the six runs that
+completed score 97.6% on average with agent ratings. Why the model's reply was unusable is
+not known: the result file of that run did not record the pipeline's failure sentence (it
+does since), and both issues completed on two diagnostic reruns each, which count toward
+nothing. The ratings are the agent's own and await the owner's review. One run of eight easy
+issues by one author: read the report's limits before quoting a number.
+
+#### Running plans with the real models
+
+About $0.10 a plan at the shipped prices, plus the embeddings (every `plan-run` indexes the
+source again). Put `ANTHROPIC_API_KEY` and `VOYAGE_API_KEY` in the process environment, set
+`Chat__Provider=anthropic` and `Embeddings__Provider=voyage`, try one development issue first
+(`--issue 3`) and look at its result file, then run the set. If a run stops partway, keep its
+file and run the missing issues with `--issue`; do not start again from the beginning.
 
 ## What is not there yet
 

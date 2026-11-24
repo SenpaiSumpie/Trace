@@ -283,6 +283,10 @@ public sealed class PlanEvalRunner(
             label,
             outcome,
             errorCode,
+            // Written by the server from a fixed set of sentences; never the model's words.
+            outcome == PlanEvalOutcomes.Failed
+                ? record?.Events.LastOrDefault(investigationEvent => investigationEvent.EventType == InvestigationEventType.Failed)?.Summary
+                : null,
             investigation?.Id,
             plan?.Id,
             plan?.IssueContentHash,
