@@ -257,8 +257,16 @@
         "No code path calls a GitHub write endpoint; a test asserts it",
         "All checks pass; committed, pushed, CI green"
       ],
-      "status": "active",
-      "startedAt": "2026-11-23T23:04:52.837Z"
+      "status": "done",
+      "startedAt": "2026-11-23T23:04:52.837Z",
+      "finishedAt": "2026-11-23T23:58:03.004Z",
+      "evidence": "Commit aa4fa93 \"feat(plans): plan API with create, read, review and a quoted Markdown export\" pushed to main; CI run 45292644224 concluded success on attempt 1 (backend, web, e2e, eval-smoke, deployment-artifacts). Supervisor verification: `git log -1 --oneline` shows aa4fa93; `git status --short` empty, main in sync with origin/main; `gh run view` shows headSha aa4fa938, success, all five jobs success; my search of src/Trace.Infrastructure/GitHub for write verbs finds only the two authentication POSTs (GitHubClient.cs:109 and :186); QuestionPrompt.cs and QuestionInvestigator.cs unchanged since 4dcb1ed; the only modified existing test file is IssueRuleTests.cs (made stricter) plus two test csproj files (test-only Markdig dependency); apps/web unchanged; golden file tests/Trace.UnitTests/Golden/plan-export.md exists; no Trace.Api process running; `dotnet build` re-run 0 warnings 0 errors; `dotnet test tests/Trace.UnitTests --no-build` re-run 641 passed. Subagent evidence: endpoints POST /api/v1/repositories/{id}/issues/{number}/plans (202), GET /api/v1/plans/{id} (optional ?checkIssue=true), POST /api/v1/plans/{id}/review, GET /api/v1/plans/{id}/export (text/markdown, fixed-pattern filename, nosniff); contract types in src/Trace.Contracts/V1/Contracts.cs. Tests in PlanApiTests (20): A_plan_is_requested_followed_like_a_question_read_reviewed_and_exported; A_caller_cannot_create_read_review_or_export_a_plan_of_a_repository_they_cannot_see (19 requests answer 404, no GitHub request, no row change); Repeated_request_with_an_idempotency_key_returns_the_same_plan; Requesting_plans_is_rate_limited_per_client_and_reading_them_is_not (202, 202, 429, 429); PlanMarkdownTests.Export_matches_the_golden_file and Hostile_text_in_every_field_cannot_change_the_structure_of_the_export; MarkdownTextTests with 73 hostile inputs judged by the Markdig parser; The_injection_fixture_issue_cannot_get_its_text_or_its_wishes_into_the_plan_or_the_export; Creating_reading_reviewing_and_exporting_a_plan_only_ever_gets_from_github; IssueRuleTests.Plan_code_and_plan_endpoints_reach_github_only_through_the_read_only_issue_reader. Tests: unit 641, security 21, integration 372, 0 failed; dotnet format --verify-no-changes exit 0. Two bugs found by the new tests and fixed: a read race that reported a finishing run as insufficient_evidence, and two concurrent reviews both reporting they marked the plan (now one conditional UPDATE). ADR-018. Two M2 boxes ticked (review changes nothing in GitHub; nothing can write). Nothing spent.",
+      "deferred": "Everything ran with the fake model, scripted test models and a GitHub stub: no real model has produced an exported plan, no export has been rendered by GitHub, and Markdig is the only renderer the export was judged against. \"Nothing can write to GitHub\" is proven against a stub and by source checks, and against real GitHub rests on the App being registered read-only. Export design cost: untrusted text is placed in code spans and fenced blocks, so model prose renders monospaced and a multi-paragraph step becomes one line; nothing is guaranteed about lines inside a fenced block of cited source, about non-CommonMark renderers, or about look-alike characters. The individual entries removed by validation are only in the investigation's events; the response and export carry counts. Create does not check that the issue exists (the run fails with issue_not_found). Only planned plans are reviewable. The 500 plan_unreachable path is untested. The API was not started locally, so the Plans migration is still not applied to the development database. Web types and UI are M2.5.",
+      "ownerActions": [
+        "After M2.5, paste one Markdown export into a GitHub comment preview and decide whether monospaced model prose is acceptable, or whether the web app should render plans from the JSON and keep the export for copying.",
+        "Decide whether an insufficient-evidence result should be reviewable; today only a planned plan can be marked reviewed (docs/open-questions.md row 99).",
+        "Keep the GitHub App registered with read-only permissions only; that is what makes \"nothing can write\" true against real GitHub, where it has only been checked against a stub."
+      ]
     },
     {
       "id": "M2.5",
@@ -272,7 +280,8 @@
         "The page works at phone width without horizontal scrolling (asserted in the browser test)",
         "Lint, web tests and build pass; all .NET checks pass; committed, pushed, CI green including the browser tests"
       ],
-      "status": "pending"
+      "status": "active",
+      "startedAt": "2026-11-23T23:58:10.108Z"
     },
     {
       "id": "M2.6",

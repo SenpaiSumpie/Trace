@@ -70,16 +70,25 @@ export interface InvestigationEvent {
 export class ApiError extends Error {
   readonly status: number
 
-  constructor(status: number, message: string) {
+  /** The API's fixed name for what went wrong, such as `issues_permission_missing`, when it gave one. */
+  readonly code: string | null
+
+  /** The correlation ID of the failed request, when the API sent one. */
+  readonly reference: string | null
+
+  constructor(status: number, message: string, code: string | null = null, reference: string | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
+    this.reference = reference
   }
 }
 
 interface ProblemDetails {
   title?: string
   detail?: string
+  code?: unknown
   errors?: Record<string, string[]>
 }
 
@@ -88,9 +97,14 @@ const CORRELATION_HEADER = 'X-Correlation-ID'
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   if (!response.ok) {
-    throw new ApiError(response.status, withReference(await describeProblem(response), response))
+    throw await toError(response)
   }
   return (await response.json()) as T
+}
+
+async function toError(response: Response): Promise<ApiError> {
+  const { message, code } = await describeProblem(response)
+  return new ApiError(response.status, withReference(message, response), code, response.headers.get(CORRELATION_HEADER))
 }
 
 /**
@@ -102,16 +116,17 @@ function withReference(message: string, response: Response): string {
   return reference ? `${message} (Reference: ${reference})` : message
 }
 
-async function describeProblem(response: Response): Promise<string> {
+async function describeProblem(response: Response): Promise<{ message: string; code: string | null }> {
   try {
     const problem = (await response.json()) as ProblemDetails
+    const code = typeof problem.code === 'string' ? problem.code : null
     const fieldErrors = Object.values(problem.errors ?? {}).flat()
     if (fieldErrors.length > 0) {
-      return fieldErrors.join(' ')
+      return { message: fieldErrors.join(' '), code }
     }
-    return problem.detail ?? problem.title ?? `The API returned ${response.status}.`
+    return { message: problem.detail ?? problem.title ?? `The API returned ${response.status}.`, code }
   } catch {
-    return `The API returned ${response.status}.`
+    return { message: `The API returned ${response.status}.`, code: null }
   }
 }
 
@@ -187,4 +202,186 @@ export async function signOut(): Promise<void> {
   if (!response.ok) {
     throw new ApiError(response.status, 'Signing out failed.')
   }
+}
+
+/**
+ * Looks a fixed name from the API up in a table of wordings. Only the table's own entries
+ * count: a name such as "constructor" finds nothing.
+ */
+export function wordingFor<T>(table: Record<string, T>, name: string | null | undefined): T | undefined {
+  return typeof name === 'string' && Object.hasOwn(table, name) ? table[name] : undefined
+}
+
+// Issues and plans. Every string in these types that comes from an issue, from source or from
+// the model is untrusted: it is shown as text and never used to build markup or an address.
+
+export interface IssueSummary {
+  number: number
+  title: string
+  state: string
+  author: string | null
+  labels: string[]
+  commentCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface IssueList {
+  items: IssueSummary[]
+  nextCursor: string | null
+}
+
+export interface IssueComment {
+  id: number
+  author: string | null
+  body: string
+  bodyTruncated: boolean
+  createdAt: string
+}
+
+export interface Issue extends IssueSummary {
+  body: string
+  bodyTruncated: boolean
+  comments: IssueComment[]
+  commentsTruncated: boolean
+}
+
+export const ISSUE_PAGE_SIZE = 20
+
+/** One page of a repository's open issues, newest first. A page may hold fewer items than asked for. */
+export function listIssues(repositoryId: string, cursor: string | null): Promise<IssueList> {
+  const query = new URLSearchParams({ limit: String(ISSUE_PAGE_SIZE) })
+  if (cursor) {
+    query.set('cursor', cursor)
+  }
+  return request<IssueList>(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/issues?${query.toString()}`)
+}
+
+export function getIssue(repositoryId: string, number: number): Promise<Issue> {
+  return request<Issue>(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/issues/${Math.trunc(number)}`)
+}
+
+export interface PlanStatement {
+  text: string
+  citations: string[]
+}
+
+export interface PlanFile {
+  path: string
+  change: string
+  reason: string
+  citations: string[]
+}
+
+export interface PlanEvidence {
+  id: string
+  source: string
+  path: string
+  startLine: number
+  endLine: number
+  commitSha: string
+  excerpt: string
+}
+
+export interface PlanDocument {
+  schemaVersion: string
+  summary: PlanStatement
+  steps: PlanStatement[]
+  filesToChange: PlanFile[]
+  risks: PlanStatement[]
+  verification: PlanStatement[]
+  unknowns: PlanStatement[]
+  evidence: PlanEvidence[]
+}
+
+export interface PlanTrimmed {
+  citations: number
+  steps: number
+  files: number
+  risks: number
+  verification: number
+  unknowns: number
+  summaryReplaced: boolean
+}
+
+export interface Plan {
+  planId: string
+  investigationId: string
+  jobId: string | null
+  repositoryId: string
+  snapshotId: string
+  commitSha: string
+  issue: { number: number; title: string | null }
+  state: 'queued' | 'running' | 'planned' | 'insufficient_evidence' | 'failed' | 'cancelled'
+  errorCode: string | null
+  modelId: string | null
+  promptVersion: string | null
+  createdAt: string
+  updatedAt: string
+  usage?: Usage
+  plan: PlanDocument | null
+  trimmed: PlanTrimmed | null
+  limitations: string[]
+  reviewedAt: string | null
+  issueCheck: { status: string; code: string | null } | null
+}
+
+/** Queues an issue-to-plan run pinned to a snapshot. A worker runs it: poll the plan until it is finished. */
+export function createPlan(input: {
+  repositoryId: string
+  issueNumber: number
+  snapshotId: string
+  idempotencyKey: string
+}): Promise<Plan> {
+  return request<Plan>(
+    `/api/v1/repositories/${encodeURIComponent(input.repositoryId)}/issues/${Math.trunc(input.issueNumber)}/plans`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ snapshotId: input.snapshotId, idempotencyKey: input.idempotencyKey }),
+    },
+  )
+}
+
+/** With `checkIssue`, the API reads the issue again and says whether it still is what the plan was made from. */
+export function getPlan(planId: string, checkIssue = false): Promise<Plan> {
+  return request<Plan>(`/api/v1/plans/${encodeURIComponent(planId)}${checkIssue ? '?checkIssue=true' : ''}`)
+}
+
+/** Records in TRACE that a person has read the plan. Nothing outside TRACE changes. */
+export function reviewPlan(planId: string): Promise<Plan> {
+  return request<Plan>(`/api/v1/plans/${encodeURIComponent(planId)}/review`, { method: 'POST' })
+}
+
+export function isPlanFinished(plan: Plan): boolean {
+  return plan.state !== 'queued' && plan.state !== 'running'
+}
+
+export interface PlanExport {
+  fileName: string
+  markdown: Blob
+}
+
+/** The plan as a Markdown file, exactly as the server wrote it. */
+export async function exportPlan(planId: string): Promise<PlanExport> {
+  const response = await fetch(`/api/v1/plans/${encodeURIComponent(planId)}/export`)
+  if (!response.ok) {
+    throw await toError(response)
+  }
+  return {
+    fileName: exportFileName(response.headers.get('Content-Disposition'), planId),
+    markdown: new Blob([await response.text()], { type: 'text/markdown' }),
+  }
+}
+
+/**
+ * The server builds the file name from the issue number and the plan's ID only. It is still
+ * taken only when it is a plain name ending in .md; anything else gets a name made here.
+ */
+function exportFileName(disposition: string | null, planId: string): string {
+  const name = /filename="?([A-Za-z0-9._-]+)"?/.exec(disposition ?? '')?.[1]
+  if (name && /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.md$/.test(name)) {
+    return name
+  }
+  return `trace-plan-${planId.replace(/[^A-Za-z0-9-]/g, '')}.md`
 }

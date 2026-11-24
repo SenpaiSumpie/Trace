@@ -76,8 +76,8 @@ line range. The full specification is in
   repository is quoted in a code span or a fenced block, so it cannot add a heading, a link,
   HTML or a forged "Reviewed" line; items without evidence are marked as the model's
   unsupported statements. A plan of a repository the caller cannot see is a 404 on all four.
-  **Tested with the fake model, scripted hostile models and a stub of GitHub only. No page
-  asks for or shows a plan yet, and no export has been pasted into the real GitHub.**
+  **Tested with the fake model, scripted hostile models and a stub of GitHub only; no export
+  has been pasted into the real GitHub.**
 - Deployment artifacts: production images for web, API and worker, a compose file that runs the
   whole stack from them, and an Azure template (Container Apps + PostgreSQL). **Nothing has been
   deployed**; see [docs/deployment.md](docs/deployment.md).
@@ -91,6 +91,17 @@ line range. The full specification is in
   asking for a plan and marking one as reviewed need sign-in.
 - Web UI: pick the indexed repository, ask a question, read the answer, the evidence as source
   listings with real line numbers, what was not settled, and every step the investigation took.
+- Web UI, issue to plan: switch from the question form to "Plan from an issue", pick a
+  repository, page through its open issues, read one as plain text (with notes where it was
+  cut), start a plan, watch its steps, then read the plan: summary, ordered steps, files to
+  change, risks, verification and unknowns, each with a control that shows the cited source
+  lines, plus what validation removed, the pinned commit, model and prompt. A sentence the
+  server verified nothing for is labelled "Not backed by evidence". The plan can be marked as
+  reviewed (an acknowledgement inside TRACE), downloaded as the server's Markdown export, and
+  checked for a changed issue. The plan is rendered from its data as ordinary text; nothing
+  from an issue, the source or the model is ever treated as markup, Markdown or a link, and
+  tests feed hostile strings into every such field. **Only ever shown fake-model plans of the
+  fixture issues. Nothing survives a reload, and there is no list of past plans (M3).**
 - Durable background jobs in PostgreSQL: investigations and indexing are queued and run by the
   worker with leases, retries with backoff, takeover when a worker dies, and cancellation
   ([ADR-005](docs/adr/ADR-005-durable-jobs-and-idempotency.md)).
@@ -127,9 +138,8 @@ line range. The full specification is in
 - Unit, integration and security tests, web component tests, and Playwright browser tests of
   the whole flow; CI runs all of them.
 
-Not implemented: a page that asks for, shows, exports or reviews a plan (the API for all four
-exists and is driven by tests only; plan generation has never run with a real model), a list of
-past plans, a telemetry backend with dashboards or alerts, a deployment
+Not implemented: plan generation with a real model (it has only ever run with the fake and
+scripted models), a list of past plans or a way back to one after a reload, a telemetry backend with dashboards or alerts, a deployment
 pipeline. Retrieval has been measured on the 27-passage fixture and, with draft labels that
 still need the owner's review, on one private repository whose numbers are not published here.
 Assumptions and deferred decisions are tracked in [docs/open-questions.md](docs/open-questions.md).

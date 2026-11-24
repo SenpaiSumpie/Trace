@@ -76,3 +76,11 @@ The final step (M6.4) turns this into the owner checklist.
 
 - [ ] Decide whether uncited unknowns and new-file reasons are acceptable in a plan, or whether they should be dropped or marked more clearly; this keeps the "issue text is treated as untrusted" milestone box open (docs/open-questions.md row 93).
 - [ ] After M2.4 adds the endpoint, do one supervised plan run with the real model on a fixture issue, including issue 14 (the prompt-injection fixture), and read the result before more is built on the plan prompt. It needs ANTHROPIC_API_KEY and VOYAGE_API_KEY and spends money.
+
+### M2.4 Plan API: create, read, review, export
+
+**Deferred:** Everything ran with the fake model, scripted test models and a GitHub stub: no real model has produced an exported plan, no export has been rendered by GitHub, and Markdig is the only renderer the export was judged against. "Nothing can write to GitHub" is proven against a stub and by source checks, and against real GitHub rests on the App being registered read-only. Export design cost: untrusted text is placed in code spans and fenced blocks, so model prose renders monospaced and a multi-paragraph step becomes one line; nothing is guaranteed about lines inside a fenced block of cited source, about non-CommonMark renderers, or about look-alike characters. The individual entries removed by validation are only in the investigation's events; the response and export carry counts. Create does not check that the issue exists (the run fails with issue_not_found). Only planned plans are reviewable. The 500 plan_unreachable path is untested. The API was not started locally, so the Plans migration is still not applied to the development database. Web types and UI are M2.5.
+
+- [ ] After M2.5, paste one Markdown export into a GitHub comment preview and decide whether monospaced model prose is acceptable, or whether the web app should render plans from the JSON and keep the export for copying.
+- [ ] Decide whether an insufficient-evidence result should be reviewable; today only a planned plan can be marked reviewed (docs/open-questions.md row 99).
+- [ ] Keep the GitHub App registered with read-only permissions only; that is what makes "nothing can write" true against real GitHub, where it has only been checked against a stub.

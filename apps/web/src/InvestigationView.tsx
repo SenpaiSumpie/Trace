@@ -86,23 +86,45 @@ export function InvestigationView({ investigation }: { investigation: Investigat
 
       <Steps investigationId={investigation.investigationId} live={false} />
 
-      <p className="provenance">
-        Read at commit <code>{investigation.commitSha.slice(0, 12)}</code>
-        {investigation.modelId && (
-          <>
-            {' '}
-            by model <code>{investigation.modelId}</code>
-          </>
-        )}
-        {investigation.promptVersion && (
-          <>
-            {' '}
-            with prompt <code>{investigation.promptVersion}</code>
-          </>
-        )}
-        .{usage && usage.inputTokens + usage.outputTokens > 0 && ` ${describeUsage(usage)}`}
-      </p>
+      <Provenance
+        commitSha={investigation.commitSha}
+        modelId={investigation.modelId}
+        promptVersion={investigation.promptVersion}
+        usage={usage}
+      />
     </article>
+  )
+}
+
+/** Which commit was read, by which model and prompt, and what it cost in tokens. */
+export function Provenance({
+  commitSha,
+  modelId,
+  promptVersion,
+  usage,
+}: {
+  commitSha: string
+  modelId: string | null
+  promptVersion: string | null
+  usage?: Usage
+}) {
+  return (
+    <p className="provenance">
+      Read at commit <code>{commitSha.slice(0, 12)}</code>
+      {modelId && (
+        <>
+          {' '}
+          by model <code>{modelId}</code>
+        </>
+      )}
+      {promptVersion && (
+        <>
+          {' '}
+          with prompt <code>{promptVersion}</code>
+        </>
+      )}
+      .{usage && usage.inputTokens + usage.outputTokens > 0 && ` ${describeUsage(usage)}`}
+    </p>
   )
 }
 
@@ -113,13 +135,21 @@ function describeUsage(usage: Usage): string {
   return `Used ${count(usage.inputTokens)} input tokens${cached > 0 ? ` (${count(cached)} from cache)` : ''} and ${count(usage.outputTokens)} output tokens.`
 }
 
-function EvidencePassage({ evidence }: { evidence: Evidence }) {
+/** A quoted piece of source with its real line numbers. The text is shown as text, whatever it contains. */
+export function EvidencePassage({
+  evidence,
+  label,
+}: {
+  evidence: Pick<Evidence, 'path' | 'startLine' | 'endLine' | 'excerpt'> & { supports?: string }
+  label?: string
+}) {
   const lines = evidence.excerpt.split('\n')
 
   return (
     <figure className="passage">
       <figcaption>
         <span className="location">
+          {label && <span className="evidence-label">{label} </span>}
           {evidence.path}, lines {evidence.startLine}–{evidence.endLine}
         </span>
         {evidence.supports && <span className="supports">{evidence.supports}</span>}

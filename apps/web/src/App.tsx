@@ -12,6 +12,7 @@ import {
 } from './api.ts'
 import { ApiStatus } from './ApiStatus.tsx'
 import { InvestigationView, POLL_INTERVAL_MS, Steps } from './InvestigationView.tsx'
+import { IssuePlanner } from './IssuePlanner.tsx'
 import { RepositoryList } from './RepositoryList.tsx'
 
 const MAX_QUESTION_LENGTH = 4000
@@ -25,6 +26,12 @@ export default function App() {
   const leave = useMutation({ mutationFn: signOut, onSuccess: () => window.location.reload() })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [question, setQuestion] = useState('')
+
+  // One thing is shown at a time: the question form, or planning from an issue. The planner
+  // is created when first opened and then kept, so a plan in progress survives a look at the
+  // other side. The state of a question lives here, so it survives too.
+  const [mode, setMode] = useState<'question' | 'plan'>('question')
+  const [plannerOpened, setPlannerOpened] = useState(false)
 
   // Asking only queues the investigation; a worker runs it. Poll until it reaches a final state.
   const ask = useMutation({ mutationFn: askQuestion })
@@ -91,7 +98,25 @@ export default function App() {
         </p>
       )}
 
-      {repositories.isSuccess && indexed.length === 0 && (
+      {repositories.isSuccess && repositories.data.length > 0 && (
+        <nav className="modes" aria-label="What to do">
+          <button type="button" aria-pressed={mode === 'question'} onClick={() => setMode('question')}>
+            Question about the code
+          </button>
+          <button
+            type="button"
+            aria-pressed={mode === 'plan'}
+            onClick={() => {
+              setPlannerOpened(true)
+              setMode('plan')
+            }}
+          >
+            Plan from an issue
+          </button>
+        </nav>
+      )}
+
+      {repositories.isSuccess && indexed.length === 0 && (mode === 'question' || repositories.data.length === 0) && (
         <p role="status">
           {repositories.data.length === 0
             ? 'No repository is available yet. Sign in with GitHub and install the TRACE app on a repository.'
@@ -99,7 +124,7 @@ export default function App() {
         </p>
       )}
 
-      {selected && (
+      {mode === 'question' && selected && (
         <form onSubmit={submit}>
           <label htmlFor="repository">Repository</label>
           <select
@@ -132,9 +157,9 @@ export default function App() {
         </form>
       )}
 
-      {ask.isError && <p role="alert">The question could not be asked. {ask.error.message}</p>}
+      {mode === 'question' && ask.isError && <p role="alert">The question could not be asked. {ask.error.message}</p>}
 
-      {working && (
+      {mode === 'question' && working && (
         <section className="working" aria-label="Investigation in progress">
           <p role="status">
             {investigation?.state === 'running' ? 'Looking through the code…' : 'Waiting for a worker…'}
@@ -157,7 +182,13 @@ export default function App() {
         </section>
       )}
 
-      {investigation && !working && <InvestigationView investigation={investigation} />}
+      {mode === 'question' && investigation && !working && <InvestigationView investigation={investigation} />}
+
+      {plannerOpened && repositories.isSuccess && (
+        <div hidden={mode !== 'plan'}>
+          <IssuePlanner repositories={repositories.data} mayStart={mayAsk} />
+        </div>
+      )}
 
       {repositories.isSuccess && repositories.data.length > 0 && (
         <RepositoryList repositories={repositories.data} mayIndex={mayAsk} />

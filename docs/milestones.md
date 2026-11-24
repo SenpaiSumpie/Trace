@@ -11,7 +11,7 @@ is finished when every box under "Done when" is ticked, and not before.
 |---|---|---|
 | M0 | Working slice | Done |
 | M1 | Measured answers | Next |
-| M2 | Issue to plan | Started (step 4 of 6) |
+| M2 | Issue to plan | Started (step 5 of 6) |
 | M3 | A product you can use daily | Not started |
 | M4 | Safe to put online | Not started |
 | M5 | Live on Azure, with a demo | Not started; needs the Azure gate |
@@ -120,21 +120,26 @@ Done when:
       design, so a model can still write an unsupported sentence there; you decide whether
       that is acceptable or whether those two should be dropped or marked more loudly.
       Second, no real model has been run on the injection fixture)
-- [ ] Plans are stored, shown in the web app, and can be exported as Markdown
-      (**not ticked yet.** Built: the `plans` table, its rules in the database and the
+- [x] Plans are stored, shown in the web app, and can be exported as Markdown
+      (Built: the `plans` table, its rules in the database and the
       versioned result document ([ADR-016](adr/ADR-016-plan-storage.md),
       [plan-result-schema.md](plan-result-schema.md)), a workflow that creates and stores
       plans, and since step M2.4 the API: ask for a plan, read it with its evidence, and
       export it as a Markdown file in which all text from the issue, the model and the
       repository is quoted so that it cannot change the document
-      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). **The web app does not show,
-      ask for or export a plan yet** (M2.5), so the box stays open)
+      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). Since step M2.5 the web
+      app lists a repository's open issues, shows one, starts a plan, shows it with the cited
+      source lines under each sentence and downloads the export; component tests cover every
+      state and hostile text, and browser tests run the whole flow by keyboard and at phone
+      width. **Every plan shown so far came from the fake model on a fixture issue**, which is
+      what the box about a structured plan above is still open for. A plan cannot be found
+      again after a reload: that is M3)
 - [x] A plan can be marked as reviewed; this changes nothing in GitHub
       (`POST /api/v1/plans/{id}/review`: one timestamp, set once, for a plan that has steps.
       Tests compare every other stored row before and after and count the requests the GitHub
       stub received during a review: none
-      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). The button for it comes with
-      the plan page in M2.5)
+      ([ADR-018](adr/ADR-018-plan-api-and-markdown-export.md)). Since step M2.5 the plan page has the button, and
+      says beside it that this is not an approval and changes nothing on GitHub)
 - [ ] The fixture has labeled issues, and plans score at least 80% on a written rubric, or
       the shortfall is written down with its cause
 - [x] Nothing TRACE does can write to a repository, open a pull request or edit an issue
